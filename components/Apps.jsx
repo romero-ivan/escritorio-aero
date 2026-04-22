@@ -830,6 +830,44 @@ function MedicoApp() {
     r.readAsDataURL(f);
   };
 
+  // Abrir analítica: convierte la data: URL guardada a blob: URL y la abre en
+  // pestaña nueva. Motivos:
+  //   1) Los navegadores modernos (Chrome/Safari/Firefox desde 2017-18) BLOQUEAN
+  //      la navegación top-level a data: URLs por seguridad. Con <a href={data:...}>
+  //      en muchos navegadores simplemente no pasa nada al pulsar. Con blob:
+  //      funciona siempre.
+  //   2) blob: tiene origen opaco, no filtra referrer a terceros, y se libera
+  //      cuando revocamos la URL (cleanup a 60s — tiempo suficiente para ver
+  //      el archivo).
+  //   3) Si alguien ha conseguido meter un data:text/html malicioso (imposible
+  //      con el <input accept="application/pdf,image/*"> pero defensa en
+  //      profundidad), blob: abre en un contexto con origen null que no puede
+  //      acceder al origen de la app.
+  const openAnalitica = (a) => {
+    try {
+      const comma = a.data.indexOf(',');
+      if (comma < 0 || !a.data.startsWith('data:')) throw new Error('formato inválido');
+      const header = a.data.slice(5, comma);
+      const isB64 = header.endsWith(';base64');
+      const mime = isB64 ? header.slice(0, -7) : (header || 'application/octet-stream');
+      const payload = a.data.slice(comma + 1);
+      let blob;
+      if (isB64) {
+        const bin = atob(payload);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        blob = new Blob([arr], { type: mime });
+      } else {
+        blob = new Blob([decodeURIComponent(payload)], { type: mime });
+      }
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      alert('No se pudo abrir el archivo: ' + (err && err.message || err));
+    }
+  };
+
   return (
     <div>
       <h2 className="section-title">⚕ Historial médico</h2>
@@ -905,7 +943,7 @@ function MedicoApp() {
                   <div style={{fontSize:11, opacity:0.75}}>{a.fecha} · {(a.size/1024).toFixed(1)} KB</div>
                 </div>
                 <div style={{display:'flex', gap:4}}>
-                  <a className="btn sm" href={a.data} target="_blank" rel="noopener">Ver</a>
+                  <button className="btn sm" onClick={()=>openAnalitica(a)}>Ver</button>
                   <button className="btn red sm" onClick={()=>setMed({...med, analiticas: med.analiticas.filter(x=>x.id!==a.id)})}>✕</button>
                 </div>
               </div>

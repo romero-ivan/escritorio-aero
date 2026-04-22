@@ -1,5 +1,27 @@
 # Changelog — Escritorio Aero
 
+## [2026-04-19t] - Hardening de seguridad: postMessage + analíticas con blob: URL
+
+### Security
+
+- **M1 + M2 (`postMessage` en `App.jsx`): validación de origen y target explícito** — `components/App.jsx`
+  - El handler de `message` ahora rechaza eventos cuyo `e.origin !== window.location.origin`. Antes aceptaba mensajes de cualquier origen — en producción `X-Frame-Options: DENY` ya nos protege de iframing, pero esta validación es defensa en profundidad: si algún día se relajase esa cabecera, un padre malicioso no podría togglear el panel de tweaks ni inyectar mensajes que la app procese.
+  - Los `window.parent.postMessage(...)` de salida pasan de target `'*'` a `window.location.origin`. Así, en el (teórico) caso de iframe cross-origin, NO filtramos la existencia del modo edit ni los cambios de tweaks a cualquier dominio que nos embebiese.
+
+- **L1 (Analíticas médicas: `data:` URL → `blob:` URL al abrir)** — `components/Apps.jsx`
+  - El botón "Ver" de analíticas ahora llama a `openAnalitica(a)` en vez de un `<a href={a.data} target="_blank" rel="noopener">`. La razón práctica: los navegadores modernos (Chrome/Safari/Firefox desde 2017-18) **bloquean la navegación top-level a `data:` URLs** → antes muchos usuarios pulsaban "Ver" y no pasaba nada.
+  - El nuevo handler convierte la `data:URL` guardada a un `blob:URL` (vía `atob` + `Uint8Array` + `Blob`), hace `window.open(url, '_blank', 'noopener,noreferrer')`, y revoca la URL con `setTimeout(..., 60000)` — 60s son suficientes para ver el PDF/imagen y luego se libera memoria.
+  - Beneficios de seguridad: blob URLs tienen **origen opaco**, no filtran referrer, y no pueden acceder al origen de la app (aunque el input `accept="application/pdf,image/*"` es client-side y un usuario podría forzar otro tipo, el blob URL aísla cualquier contenido hostil del origen principal).
+
+### Archivos tocados
+- `components/App.jsx`: validación `e.origin` en listener + target explícito en postMessage.
+- `components/Apps.jsx`: nueva función `openAnalitica` con conversión data→blob + revoke, y el `<a>` cambiado a `<button onClick>`.
+- `firebase-config.js`: bump a `v2026-04-19t`.
+
+### Notas
+- Primer commit tras inicializar el repo en `github.com/rusientes/escritorio-aero` (privado). A partir de ahora hay historial auditable de los cambios.
+- Pendientes del audit que NO están en este deploy (porque requieren trabajo más grande o decisiones de producto): App Check, E2EE de datos sensibles (diario/médico/finanzas), endurecimiento adicional de CSP (quitar `https:` de img-src y `wss://*.firebaseio.com` de connect-src, self-host de React/Babel). Dejados como futuro.
+
 ## [2026-04-19s] - Fix último item de /review: IDs de gradient de YearProgressGadget estables por instancia
 
 ### Bugfix

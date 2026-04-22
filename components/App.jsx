@@ -86,21 +86,27 @@ function App() {
     document.documentElement.style.setProperty('--blur', tweaks.blur + 'px');
   }, [tweaks]);
 
-  // Edit mode host integration
+  // Edit mode host integration — DEFENSA EN PROFUNDIDAD
+  // - Validamos e.origin: solo aceptamos mensajes del mismo origen. Ahora mismo
+  //   X-Frame-Options: DENY ya bloquea iframing, pero si esa cabecera se relajase
+  //   en el futuro, esta validación evita que un padre malicioso manipule UI.
+  // - postMessage sale con target = window.location.origin (no '*'): evita fuga
+  //   de info a cualquier padre en el (teórico) caso de iframe cross-origin.
   aE(() => {
     const handler = (e) => {
+      if (e.origin !== window.location.origin) return;
       if (e.data?.type === '__activate_edit_mode') setTweaksVisible(true);
       if (e.data?.type === '__deactivate_edit_mode') setTweaksVisible(false);
     };
     window.addEventListener('message', handler);
-    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    window.parent.postMessage({type:'__edit_mode_available'}, window.location.origin);
     return () => window.removeEventListener('message', handler);
   }, []);
 
   const applyTweak = (patch) => {
     const next = {...tweaks, ...patch};
     setTweaks(next);
-    window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, '*');
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, window.location.origin);
   };
 
   const openApp = (key) => {
