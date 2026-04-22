@@ -1,0 +1,25 @@
+# Dependencias
+node_modules/
+
+# Cache de Firebase CLI (contiene hashes locales, no secretos pero innecesario)
+.firebase/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Credenciales (por si acaso — nunca deberían aparecer aquí)
+.env
+.env.*
+.git-credentials
+*.pem
+*.key
+
+# Editores / Claude Code session
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
