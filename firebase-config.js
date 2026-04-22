@@ -14,7 +14,7 @@
 // --- Stamp de versión visible SIEMPRE en pantalla (fuera del IIFE para que se ejecute
 //     incluso si el IIFE crashea). Sirve para confirmar que el navegador cargó esta
 //     versión y no una cacheada. ---
-const AERO_VERSION = 'v2026-04-19t';
+const AERO_VERSION = 'v2026-04-22a';
 function aeroMountVersionStamp() {
   if (!document.body) { setTimeout(aeroMountVersionStamp, 30); return; }
   if (document.getElementById('aero-version-stamp')) return;

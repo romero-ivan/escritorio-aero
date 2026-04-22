@@ -2,7 +2,10 @@
    FRUTIGER AERO — 2001-2007 authentic
    ===================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Tahoma&display=swap');
+/* Tahoma ya viene preinstalada en Windows/macOS/iOS/Android (y en la pila
+   de fallback de --font-ui / --font-body más abajo). El @import que había
+   aquí apuntaba a fonts.googleapis.com, que NO está permitido por style-src
+   en firebase.json → el navegador lo bloqueaba silenciosamente. Eliminado. */
 
 :root {
   --font-ui: "Segoe UI", "Frutiger", "Myriad Pro", Tahoma, "Lucida Sans Unicode", sans-serif;

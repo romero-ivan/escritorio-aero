@@ -94,7 +94,15 @@ function App() {
   //   de info a cualquier padre en el (teórico) caso de iframe cross-origin.
   aE(() => {
     const handler = (e) => {
-      if (e.origin !== window.location.origin) return;
+      if (e.origin !== window.location.origin) {
+        // Rechazo audible: si algún día se relaja X-Frame-Options y empieza a
+        // llegar tráfico desde un iframe padre externo, queremos ver el intento
+        // en la consola (y no que se descarte en silencio, antipatrón del
+        // CLAUDE.md). No llamamos a log() del módulo cloud porque no está
+        // expuesto — console.warn es el canal disponible aquí.
+        console.warn('[aero] postMessage descartado, origen inesperado:', e.origin);
+        return;
+      }
       if (e.data?.type === '__activate_edit_mode') setTweaksVisible(true);
       if (e.data?.type === '__deactivate_edit_mode') setTweaksVisible(false);
     };

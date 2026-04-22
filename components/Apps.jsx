@@ -836,14 +836,18 @@ function MedicoApp() {
   //      la navegación top-level a data: URLs por seguridad. Con <a href={data:...}>
   //      en muchos navegadores simplemente no pasa nada al pulsar. Con blob:
   //      funciona siempre.
-  //   2) blob: tiene origen opaco, no filtra referrer a terceros, y se libera
-  //      cuando revocamos la URL (cleanup a 60s — tiempo suficiente para ver
-  //      el archivo).
-  //   3) Si alguien ha conseguido meter un data:text/html malicioso (imposible
-  //      con el <input accept="application/pdf,image/*"> pero defensa en
-  //      profundidad), blob: abre en un contexto con origen null que no puede
-  //      acceder al origen de la app.
+  //   2) blob: tiene su propio esquema y se libera al revocar la URL (cleanup a
+  //      60s — tiempo suficiente para ver el archivo). Cuando el navegador
+  //      abre el blob en otra pestaña como documento top-level con
+  //      noopener+noreferrer, el nuevo contexto queda aislado de esta app (no
+  //      hay window.opener, no hay referrer).
+  //   3) Defensa en profundidad frente a un data:text/html hostil: el input
+  //      con accept="application/pdf,image/*" es solo una sugerencia del lado
+  //      cliente (se puede bypassear editando el DOM o subiendo desde otra
+  //      ruta), así que preferimos que el contenido se abra como documento
+  //      aislado vía blob: + noopener antes que como data: top-level.
   const openAnalitica = (a) => {
+    let url = null;
     try {
       const comma = a.data.indexOf(',');
       if (comma < 0 || !a.data.startsWith('data:')) throw new Error('formato inválido');
@@ -860,10 +864,23 @@ function MedicoApp() {
       } else {
         blob = new Blob([decodeURIComponent(payload)], { type: mime });
       }
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      url = URL.createObjectURL(blob);
+      // IMPORTANTE: comprobar que window.open no devolvió null. Safari/Chrome
+      // bloquean popups cuando el click handler hace trabajo async (aquí el
+      // atob + Blob puede retrasar lo suficiente). Si devuelve null, sin aviso
+      // el usuario pulsa "Ver" y no pasa nada → antipatrón de "crash silencioso"
+      // del CLAUDE.md. Avisamos y revocamos la URL que habíamos creado.
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        URL.revokeObjectURL(url);
+        url = null;
+        alert('El navegador ha bloqueado la ventana emergente. Permite popups para este sitio y vuelve a pulsar "Ver".');
+        return;
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) {
+      if (url) { try { URL.revokeObjectURL(url); } catch {} }
+      console.error('[aero] openAnalitica fallo:', err);
       alert('No se pudo abrir el archivo: ' + (err && err.message || err));
     }
   };

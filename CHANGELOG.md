@@ -1,5 +1,29 @@
 # Changelog — Escritorio Aero
 
+## [2026-04-22a] - CSP hardening + follow-ups del ultrareview
+
+### Security (CSP — PR #1)
+
+- **Endurecimiento de `firebase.json`** — quitado `https:` genérico de `img-src` (antes permitía cargar imágenes de cualquier HTTPS, ahora solo `'self' data: blob:`) y eliminados `https://*.firebaseio.com` + `wss://*.firebaseio.com` de `connect-src` (restos de RTDB no usados; Firestore va por `*.googleapis.com`).
+- **`aero.css`: `@import` de `fonts.googleapis.com` eliminado** — el `@import url('https://fonts.googleapis.com/css2?family=Tahoma&display=swap')` estaba siendo bloqueado silenciosamente por la CSP (style-src no incluía googleapis) y, además, Tahoma ya venía preinstalada en todos los SOs objetivo y estaba en la pila de fallback. Quitar el @import reduce una request bloqueada por carga de página y deja la CSP coherente sin tener que relajar style-src ni añadir un font-src.
+
+### Follow-ups del ultrareview (M1/M2/L1 revisitados)
+
+- **`App.jsx` postMessage: log en rama rechazada** — la validación `e.origin !== window.location.origin` hacía `return` silencioso. Ahora imprime `console.warn('[aero] postMessage descartado, origen inesperado:', e.origin)` para cumplir la regla de CLAUDE.md de "no crashes silenciosos" y dejar rastro si algún día se relaja `X-Frame-Options`.
+- **`Apps.jsx` openAnalitica: null-check del popup blocker** — `window.open(...)` puede devolver `null` si Safari/Chrome bloquean el popup (sobre todo cuando el handler hace trabajo async tipo `atob`/`Blob` y el navegador pierde la gesture). Antes: la blob se revocaba a los 60 s y el usuario no veía nada. Ahora: si `win == null` se revoca la URL y se avisa con alert para que active popups. También `console.error` en el catch para que el fallo quede en consola además del alert.
+- **Comentarios imprecisos corregidos** (`Apps.jsx:839` y `:842`) — "blob: tiene origen opaco" era impreciso (las blob URLs heredan el origen de quien las crea); el aislamiento real viene de abrirse como documento top-level con `noopener+noreferrer`. "imposible con `<input accept=>`" era falso — `accept` es solo hint client-side, se puede bypassear. Los comentarios ahora describen lo que de verdad pasa.
+
+### Archivos tocados
+- `firebase.json`: `img-src` y `connect-src` más restrictivos.
+- `aero.css`: `@import` a Google Fonts eliminado + comentario explicativo.
+- `components/App.jsx`: `console.warn` en la rama de origen rechazado de postMessage.
+- `components/Apps.jsx`: `openAnalitica` con null-check de `window.open`, `console.error` en catch, revoke en error paths, y comentarios corregidos.
+- `firebase-config.js`: bump a `v2026-04-22a` (antes `v2026-04-19t`).
+
+### Notas
+- Cierra PR #1 (`hardening/csp-tighten` → `main`) en `github.com/rusientes/escritorio-aero`.
+- Tres findings de `/ultrareview` atendidos: (1) popup blocker silent-failure, (2) comentario "origen opaco" impreciso, (3) comentario "imposible con accept=" inexacto. No quedan bloqueos del review de PR #1.
+
 ## [2026-04-19t] - Hardening de seguridad: postMessage + analíticas con blob: URL
 
 ### Security
