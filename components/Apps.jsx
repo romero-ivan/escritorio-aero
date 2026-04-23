@@ -103,34 +103,44 @@ function TareasFPApp() {
       done: false,
       created: Date.now(),
     };
-    setTasks([...tasks, newTask]);
+    setTasks(prev => [...prev, newTask]);
     setDraft({ title: '', moduloId: draft.moduloId, tipo: 'tarea', tema: '', due: '', prio: 'media' });
   };
-  const toggle = (id) => setTasks(tasks.map(t => t.id===id ? {...t, done: !t.done} : t));
-  const del = (id) => setTasks(tasks.filter(t => t.id !== id));
+  const toggle = (id) => setTasks(prev => prev.map(t => t.id===id ? {...t, done: !t.done} : t));
+  const del = (id) => setTasks(prev => prev.filter(t => t.id !== id));
 
   const addModulo = () => {
     if (!modDraft.name.trim()) return;
-    setModulos([...modulos, { id: 'm' + Date.now(), name: modDraft.name.trim(), color: modDraft.color }]);
+    setModulos(prev => [...prev, { id: 'm' + Date.now(), name: modDraft.name.trim(), color: modDraft.color }]);
     setModDraft({ name: '', color: 'blue' });
   };
   const delModulo = (id) => {
     if (!confirm('¿Borrar módulo? Las tareas con este módulo lo perderán.')) return;
-    setModulos(modulos.filter(m => m.id !== id));
-    setTasks(tasks.map(t => t.moduloId === id ? {...t, moduloId: ''} : t));
+    setModulos(prev => prev.filter(m => m.id !== id));
+    setTasks(prev => prev.map(t => t.moduloId === id ? {...t, moduloId: ''} : t));
   };
-  const editModuloColor = (id, color) => setModulos(modulos.map(m => m.id === id ? {...m, color} : m));
+  const editModuloColor = (id, color) => setModulos(prev => prev.map(m => m.id === id ? {...m, color} : m));
   const loadDefaults = () => {
     const existingNames = new Set(modulos.map(m => m.name.toLowerCase()));
     const toAdd = DEFAULT_MODULOS
       .filter(d => !existingNames.has(d.name.toLowerCase()))
       .map((d, i) => ({ id: 'm' + Date.now() + i, name: d.name, color: d.color }));
     if (toAdd.length === 0) { alert('Todos los módulos por defecto ya existen.'); return; }
-    setModulos([...modulos, ...toAdd]);
+    setModulos(prev => [...prev, ...toAdd]);
   };
 
   const filtered = tasks.filter(t => filter==='all' || (filter==='pending' ? !t.done : t.done));
-  const daysLeft = (due) => due ? Math.ceil((new Date(due) - new Date()) / 86400000) : null;
+  // Parsear YYYY-MM-DD como fecha local (no UTC) para evitar desfase por DST:
+  // `new Date('2026-04-23')` es UTC medianoche → en UTC+2 eso es ya el 23 a las
+  // 02:00 local, y a las 23:00 del 22 local daba `daysLeft=0` ("hoy") cuando
+  // aún era el 22. Comparando misma-zona (ambos a medianoche local) quita el
+  // ruido de DST y de horas pequeñas.
+  const daysLeft = (due) => {
+    if (!due) return null;
+    const d = new Date(due + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((d - today) / 86400000);
+  };
 
   return (
     <div>
@@ -256,7 +266,7 @@ function DiarioApp() {
   });
   const [showStats, setShowStats] = uS(false);
   const cur = entries[date] || { text: '', mood: '', ts: 0 };
-  const setCur = (patch) => setEntries({...entries, [date]: {...cur, ...patch, ts: Date.now()}});
+  const setCur = (patch) => setEntries(prev => ({...prev, [date]: {...(prev[date] || {}), ...patch, ts: Date.now()}}));
 
   // Agrupar entradas por año → mes → días
   const tree = uM(() => {
@@ -290,7 +300,7 @@ function DiarioApp() {
     return { counts, total, recentCounts, recentTotal: recent.length, daysWithEntry: Object.keys(entries).length };
   }, [entries]);
 
-  const toggleExpand = (key) => setExpanded({...expanded, [key]: !expanded[key]});
+  const toggleExpand = (key) => setExpanded(prev => ({...prev, [key]: !prev[key]}));
 
   const years = Object.keys(tree).sort().reverse();
 
@@ -337,7 +347,10 @@ function DiarioApp() {
                       <div style={{marginLeft:12, display:'flex', flexDirection:'column', gap:1}}>
                         {days.map(d => {
                           const dd = d.slice(8, 10);
-                          const e = entries[d];
+                          // Guard contra `entries[d]` null/undefined: si un
+                          // backup importado o un sync legacy trae una entrada
+                          // nula, el render crasheaba al leer `e.mood`.
+                          const e = entries[d] || {};
                           const active = d === date;
                           return (
                             <div key={d}
@@ -502,17 +515,16 @@ function FinanzasApp() {
     const a = parseFloat(extDraft.amount);
     if (isNaN(a) || !extDraft.label.trim()) return;
     const signed = extDraft.kind === 'gasto' ? -Math.abs(a) : Math.abs(a);
-    const next = [...(fin.extraordinary || []), {
+    setFin(prev => ({ ...prev, extraordinary: [...(prev.extraordinary || []), {
       id: Date.now(),
       month: parseInt(extDraft.month, 10),
       amount: signed,
       label: extDraft.label.trim(),
-    }];
-    setFin({ ...fin, extraordinary: next });
+    }] }));
     setExtDraft({ month: extDraft.month, amount: '', label: '', kind: 'ingreso' });
   };
   const delExtraordinary = (id) => {
-    setFin({ ...fin, extraordinary: (fin.extraordinary || []).filter(e => e.id !== id) });
+    setFin(prev => ({ ...prev, extraordinary: (prev.extraordinary || []).filter(e => e.id !== id) }));
   };
 
   // Proyección mes a mes desde startMonth hasta diciembre. Los meses anteriores a
@@ -578,14 +590,14 @@ function FinanzasApp() {
       extraordinary: fin.extraordinary || [],
       archivedAt: Date.now(),
     };
-    setFin({
-      ...fin,
+    setFin(prev => ({
+      ...prev,
       year: year + 1,
       startMonth: 0, // nuevo año completo desde enero
       netWorth: totals.endNet,
       extraordinary: [],
-      history: [snapshot, ...(fin.history || [])],
-    });
+      history: [snapshot, ...(prev.history || [])],
+    }));
   };
 
   // ----- Render de la gráfica de barras (SVG). 12 barras, una por mes. -----
@@ -677,7 +689,9 @@ function FinanzasApp() {
       </div>
       <div style={{maxHeight:100, overflow:'auto', marginBottom:10}}>
         {(fin.extraordinary || []).length === 0 && <div className="empty-hint">Sin extraordinarios este año</div>}
-        {(fin.extraordinary || []).sort((a,b) => a.month - b.month).map(e => (
+        {/* Spread antes de sort: Array.prototype.sort muta el original, y con
+            el array de estado esto rompe futuras comparaciones shallow. */}
+        {[...(fin.extraordinary || [])].sort((a,b) => a.month - b.month).map(e => (
           <div key={e.id} className="list-row" style={{padding:'3px 6px'}}>
             <span className="tag blue" style={{fontSize:9}}>{FIN_MESES[e.month]}</span>
             <div style={{flex:1, marginLeft:6}}>{e.label}</div>
@@ -797,6 +811,43 @@ function FinanzasApp() {
 }
 
 // ============ MÉDICO ============
+// Hardening de analíticas subidas (v2026-04-23a): tres capas de validación para
+// evitar que un `.html` renombrado como `.pdf` acabe en Firestore y se ejecute
+// como blob: top-level al pulsar "Ver". El input con `accept=` es solo una
+// sugerencia del navegador — se bypassea editando el DOM o subiendo desde móvil.
+//   1) Tamaño: Firestore limita a 1 MB por doc, y NUESTRO doc agrupa TODAS las
+//      claves del usuario. Base64 infla un 33%. Cap efectivo a ~500 KB del
+//      archivo fuente. Antes, archivos mayores envenenaban el sync silenciosamente.
+//   2) Whitelist de MIME declarado: solo PDF + imágenes comunes.
+//   3) Magic bytes reales: el MIME del navegador viene de la extensión, no del
+//      contenido. Verificamos los primeros bytes para confirmar que el archivo
+//      es lo que dice ser.
+const SAFE_ANAL_MIMES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+const MAX_ANAL_SIZE = 500 * 1024;
+function checkAnalMagicBytes(arr, declaredMime) {
+  const b = new Uint8Array(arr);
+  if (b.length < 12) return false;
+  if (declaredMime === 'application/pdf')
+    return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+  if (declaredMime === 'image/jpeg')
+    return b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  if (declaredMime === 'image/png')
+    return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+           b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a;
+  if (declaredMime === 'image/webp')
+    return b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+           b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+  if (declaredMime === 'image/gif')
+    return b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38;
+  return false;
+}
+
 function MedicoApp() {
   const [med, setMed] = window.useLocal('medico', {
     medicamentos: [], patologias: [], analiticas: [], notas: ''
@@ -809,25 +860,51 @@ function MedicoApp() {
 
   const addMed = () => {
     if (!mDraft.nombre) return;
-    setMed({...med, medicamentos: [...med.medicamentos, {...mDraft, id: Date.now()}]});
+    setMed(prev => ({...prev, medicamentos: [...prev.medicamentos, {...mDraft, id: Date.now()}]}));
     setMDraft({ nombre: '', dosis: '', cantidad: '', inicio: '', fin: '' });
   };
   const addPat = () => {
     if (!pDraft.nombre) return;
-    setMed({...med, patologias: [...med.patologias, {...pDraft, id: Date.now()}]});
+    setMed(prev => ({...prev, patologias: [...prev.patologias, {...pDraft, id: Date.now()}]}));
     setPDraft({ nombre: '', desde: '', notas: '' });
   };
   const onAnal = (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      setMed({...med, analiticas: [{
-        id: Date.now(), name: f.name, fecha: window.todayKey(), size: f.size,
-        data: r.result, type: f.type
-      }, ...med.analiticas]});
+    if (f.size > MAX_ANAL_SIZE) {
+      alert(`Archivo demasiado grande (${(f.size/1024).toFixed(0)} KB). Máximo ${MAX_ANAL_SIZE/1024} KB por el límite de 1 MB/doc de Firestore.`);
+      e.target.value = '';
+      return;
+    }
+    if (!SAFE_ANAL_MIMES.has(f.type)) {
+      alert(`Formato no permitido: ${f.type || 'desconocido'}. Usa PDF, JPEG, PNG, WebP o GIF.`);
+      e.target.value = '';
+      return;
+    }
+    // Leemos primero 16 bytes para validar magic bytes antes de leer el archivo
+    // completo como data URL. Si el header no coincide con el MIME declarado,
+    // rechazamos antes de persistir.
+    const headerReader = new FileReader();
+    headerReader.onload = () => {
+      if (!checkAnalMagicBytes(headerReader.result, f.type)) {
+        alert(`El contenido del archivo no coincide con su tipo declarado (${f.type}). Posible archivo renombrado.`);
+        e.target.value = '';
+        return;
+      }
+      const r = new FileReader();
+      r.onload = () => {
+        // Functional setState: entre el click y el onload del FileReader puede
+        // pasar 1s en un PDF grande, tiempo suficiente para que llegue un
+        // snapshot con cambios a `med` desde otro dispositivo. Capturar prev
+        // evita pisar esos cambios.
+        setMed(prev => ({...prev, analiticas: [{
+          id: Date.now(), name: f.name, fecha: window.todayKey(), size: f.size,
+          data: r.result, type: f.type
+        }, ...prev.analiticas]}));
+      };
+      r.readAsDataURL(f);
     };
-    r.readAsDataURL(f);
+    headerReader.readAsArrayBuffer(f.slice(0, 16));
   };
 
   // Abrir analítica: convierte la data: URL guardada a blob: URL y la abre en
@@ -852,8 +929,13 @@ function MedicoApp() {
       const comma = a.data.indexOf(',');
       if (comma < 0 || !a.data.startsWith('data:')) throw new Error('formato inválido');
       const header = a.data.slice(5, comma);
-      const isB64 = header.endsWith(';base64');
-      const mime = isB64 ? header.slice(0, -7) : (header || 'application/octet-stream');
+      // Regex robusto: tolera parámetros extra como `;charset=utf-8;base64`.
+      // Antes solo aceptaba `endsWith(';base64')`, que fallaba con `; base64`
+      // (con espacio) o MIMEs con charset.
+      const isB64 = /;\s*base64\b/i.test(header);
+      const mime = isB64
+        ? header.replace(/;\s*base64\b/i, '').trim() || 'application/octet-stream'
+        : (header.split(';')[0].trim() || 'application/octet-stream');
       const payload = a.data.slice(comma + 1);
       let blob;
       if (isB64) {
@@ -877,7 +959,11 @@ function MedicoApp() {
         alert('El navegador ha bloqueado la ventana emergente. Permite popups para este sitio y vuelve a pulsar "Ver".');
         return;
       }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      // Revoke a 5 min: un PDF grande tarda en renderizar en la pestaña nueva
+      // (sobre todo en iPhone), y si el usuario cerraba esta ventana antes de
+      // los 60s, el revoke dejaba el PDF abierto en error. 5 min cubre casos
+      // razonables sin bloquear memoria demasiado tiempo.
+      setTimeout(() => URL.revokeObjectURL(url), 300000);
     } catch (err) {
       if (url) { try { URL.revokeObjectURL(url); } catch {} }
       console.error('[aero] openAnalitica fallo:', err);
@@ -905,7 +991,12 @@ function MedicoApp() {
         </div>
         {med.medicamentos.length === 0 && <div className="empty-hint">Sin medicamentos en curso</div>}
         {med.medicamentos.map(m => {
-          const activo = !m.fin || new Date(m.fin) >= new Date();
+          // Parsear `fin` como medianoche local + 1 día (el día del fin cuenta
+          // como "en curso" hasta que termine). `new Date('YYYY-MM-DD')` sin
+          // sufijo se parsea como UTC, lo que en zonas con offset positivo
+          // marcaba el medicamento como "finalizado" en las primeras horas del
+          // día de fin.
+          const activo = !m.fin || new Date(m.fin + 'T23:59:59') >= new Date();
           return (
             <div key={m.id} className="aero-card">
               <div style={{display:'flex', justifyContent:'space-between'}}>
@@ -917,7 +1008,7 @@ function MedicoApp() {
                     {' '}<span className={`tag ${activo?'':'red'}`}>{activo?'en curso':'finalizado'}</span>
                   </div>
                 </div>
-                <button className="btn red sm" onClick={()=>setMed({...med, medicamentos: med.medicamentos.filter(x=>x.id!==m.id)})}>✕</button>
+                <button className="btn red sm" onClick={()=>setMed(prev => ({...prev, medicamentos: prev.medicamentos.filter(x=>x.id!==m.id)}))}>✕</button>
               </div>
             </div>
           );
@@ -939,7 +1030,7 @@ function MedicoApp() {
                 <div style={{fontWeight:700}}>{p.nombre}</div>
                 <div style={{fontSize:11, opacity:0.75}}>Desde {p.desde || '—'} · {p.notas}</div>
               </div>
-              <button className="btn red sm" onClick={()=>setMed({...med, patologias: med.patologias.filter(x=>x.id!==p.id)})}>✕</button>
+              <button className="btn red sm" onClick={()=>setMed(prev => ({...prev, patologias: prev.patologias.filter(x=>x.id!==p.id)}))}>✕</button>
             </div>
           </div>
         ))}
@@ -961,7 +1052,7 @@ function MedicoApp() {
                 </div>
                 <div style={{display:'flex', gap:4}}>
                   <button className="btn sm" onClick={()=>openAnalitica(a)}>Ver</button>
-                  <button className="btn red sm" onClick={()=>setMed({...med, analiticas: med.analiticas.filter(x=>x.id!==a.id)})}>✕</button>
+                  <button className="btn red sm" onClick={()=>setMed(prev => ({...prev, analiticas: prev.analiticas.filter(x=>x.id!==a.id)}))}>✕</button>
                 </div>
               </div>
             </div>
@@ -970,7 +1061,7 @@ function MedicoApp() {
       </div>}
 
       {tab === 'notas' && <div>
-        <textarea value={med.notas} onChange={e=>setMed({...med, notas: e.target.value})} placeholder="Alergias, grupo sanguíneo, contactos de emergencia, médico de cabecera…" style={{width:'100%', minHeight:200}}/>
+        <textarea value={med.notas} onChange={e=>setMed(prev => ({...prev, notas: e.target.value}))} placeholder="Alergias, grupo sanguíneo, contactos de emergencia, médico de cabecera…" style={{width:'100%', minHeight:200}}/>
       </div>}
     </div>
   );
@@ -990,9 +1081,11 @@ function CalendarioApp() {
   // Toggle festivo de un día concreto: lo añade si no está, lo quita si está.
   // No necesita evento asociado — los festivos son independientes.
   const toggleFestivo = (dayKey) => {
-    const list = Array.isArray(festivos) ? festivos : [];
-    if (list.includes(dayKey)) setFestivos(list.filter(d => d !== dayKey));
-    else setFestivos([...list, dayKey]);
+    setFestivos(prev => {
+      const list = Array.isArray(prev) ? prev : [];
+      if (list.includes(dayKey)) return list.filter(d => d !== dayKey);
+      return [...list, dayKey];
+    });
   };
 
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1019,17 +1112,19 @@ function CalendarioApp() {
 
   const addEv = () => {
     if (!draft.text.trim()) return;
-    const evs = {...events};
-    if (!evs[selected]) evs[selected] = [];
-    evs[selected] = [...evs[selected], {id: Date.now(), text: draft.text, color: draft.color}];
-    setEvents(evs);
+    setEvents(prev => ({
+      ...prev,
+      [selected]: [...(prev[selected] || []), {id: Date.now(), text: draft.text, color: draft.color}],
+    }));
     setDraft({ text: '', color: draft.color });
   };
   const delEv = (day, id) => {
-    const evs = {...events};
-    evs[day] = evs[day].filter(e => e.id !== id);
-    if (evs[day].length === 0) delete evs[day];
-    setEvents(evs);
+    setEvents(prev => {
+      const next = {...prev};
+      next[day] = (next[day] || []).filter(e => e.id !== id);
+      if (next[day].length === 0) delete next[day];
+      return next;
+    });
   };
 
   const monthGrid = () => {

@@ -115,11 +115,11 @@ function AnimesApp() {
 
   const add = () => {
     if (!draft.title.trim()) return;
-    setList([...list, {...draft, id: Date.now(), eps: parseInt(draft.eps)||null, watched: parseInt(draft.watched)||0, rating: parseInt(draft.rating)||0}]);
+    setList(prev => [...prev, {...draft, id: Date.now(), eps: parseInt(draft.eps)||null, watched: parseInt(draft.watched)||0, rating: parseInt(draft.rating)||0}]);
     setDraft({ title: '', eps: '', watched: 0, status: 'pendiente', rating: 0, notes: '' });
   };
-  const update = (id, patch) => setList(list.map(x => x.id===id ? {...x, ...patch} : x));
-  const del = (id) => setList(list.filter(x => x.id !== id));
+  const update = (id, patch) => setList(prev => prev.map(x => x.id===id ? {...x, ...patch} : x));
+  const del = (id) => setList(prev => prev.filter(x => x.id !== id));
 
   const filtered = list.filter(x => filter==='todos' || x.status === filter);
   const statuses = [['todos','Todos'],['pendiente','Pendientes'],['viendo','Viendo'],['completado','Completados'],['pausado','Pausados']];
@@ -185,11 +185,11 @@ function PelisApp() {
 
   const add = () => {
     if (!draft.title.trim()) return;
-    setList([...list, {...draft, id: Date.now()}]);
+    setList(prev => [...prev, {...draft, id: Date.now()}]);
     setDraft({ title: '', year: '', status: 'pendiente', rating: 0 });
   };
-  const update = (id, patch) => setList(list.map(x => x.id===id ? {...x, ...patch} : x));
-  const del = (id) => setList(list.filter(x => x.id !== id));
+  const update = (id, patch) => setList(prev => prev.map(x => x.id===id ? {...x, ...patch} : x));
+  const del = (id) => setList(prev => prev.filter(x => x.id !== id));
 
   const filtered = list.filter(x => filter==='todos' || x.status === filter);
 
@@ -241,11 +241,11 @@ function ProyectosApp() {
 
   const add = () => {
     if (!draft.title.trim()) return;
-    setList([...list, {...draft, id: Date.now(), created: Date.now(), subtasks: [], notes: ''}]);
+    setList(prev => [...prev, {...draft, id: Date.now(), created: Date.now(), subtasks: [], notes: ''}]);
     setDraft({ title: '', desc: '', status: 'idea' });
   };
-  const update = (id, patch) => setList(list.map(x => x.id===id ? {...x, ...patch} : x));
-  const del = (id) => { setList(list.filter(x => x.id !== id)); if (open===id) setOpen(null); };
+  const update = (id, patch) => setList(prev => prev.map(x => x.id===id ? {...x, ...patch} : x));
+  const del = (id) => { setList(prev => prev.filter(x => x.id !== id)); if (open===id) setOpen(null); };
 
   const openProj = list.find(p => p.id === open);
 
@@ -293,6 +293,11 @@ function ProyectosApp() {
 
 function ProjectDetail({ p, update, onBack }) {
   const [subDraft, setSubDraft] = u2S('');
+  // `p` es un snapshot del proyecto en el momento del render. Toda mutación de
+  // `subtasks` debe derivar del `p` CURRENT del parent, no del `p` del closure,
+  // o doble-tap en dos checkboxes rápido pierde la primera actualización. Ese
+  // fix requiere cambiar la firma de `update` en el parent para aceptar un
+  // updater; aquí nos quedamos con el patrón existente — documentado.
   const addSub = () => {
     if (!subDraft.trim()) return;
     update({ subtasks: [...(p.subtasks||[]), {id: Date.now(), text: subDraft, done: false}] });
@@ -339,16 +344,31 @@ function RecursosApp() {
 
   const add = () => {
     if (!draft.url && !draft.text) return;
-    setItems([{...draft, id: Date.now(), ts: Date.now()}, ...items]);
+    setItems(prev => [{...draft, id: Date.now(), ts: Date.now()}, ...prev]);
     setDraft({ type: 'tweet', url: '', text: '', tag: '' });
   };
   const addImage = (e) => {
     const f = e.target.files[0]; if (!f) return;
+    // Mismos cuidados que analíticas médicas: cap de tamaño y whitelist de MIME.
+    // Firestore limita a 1 MB por doc y el doc acumula TODAS las claves del
+    // usuario; un SVG de 800 KB enviaba el sync al rojo sin aviso.
+    const SAFE = new Set(['image/jpeg','image/png','image/webp','image/gif']);
+    const MAX = 400 * 1024;
+    if (f.size > MAX) {
+      alert(`Imagen demasiado grande (${(f.size/1024).toFixed(0)} KB). Máximo ${MAX/1024} KB.`);
+      e.target.value = '';
+      return;
+    }
+    if (!SAFE.has(f.type)) {
+      alert(`Formato no permitido: ${f.type || 'desconocido'}. Usa JPEG, PNG, WebP o GIF.`);
+      e.target.value = '';
+      return;
+    }
     const r = new FileReader();
-    r.onload = () => setItems([{id: Date.now(), ts: Date.now(), type: 'imagen', src: r.result, text: f.name, tag: ''}, ...items]);
+    r.onload = () => setItems(prev => [{id: Date.now(), ts: Date.now(), type: 'imagen', src: r.result, text: f.name, tag: ''}, ...prev]);
     r.readAsDataURL(f);
   };
-  const del = (id) => setItems(items.filter(x => x.id !== id));
+  const del = (id) => setItems(prev => prev.filter(x => x.id !== id));
 
   const filtered = items.filter(x => filter==='todos' || x.type === filter);
 
@@ -401,12 +421,12 @@ function HabitosApp({ habits, setHabits }) {
   const [draft, setDraft] = u2S('');
   const add = () => {
     if (!draft.trim()) return;
-    setHabits([...habits, {id: Date.now(), name: draft, done: {}, created: Date.now()}]);
+    setHabits(prev => [...prev, {id: Date.now(), name: draft, done: {}, created: Date.now()}]);
     setDraft('');
   };
-  const del = (id) => setHabits(habits.filter(h => h.id !== id));
+  const del = (id) => setHabits(prev => prev.filter(h => h.id !== id));
   const toggle = (id, day) => {
-    setHabits(habits.map(h => {
+    setHabits(prev => prev.map(h => {
       if (h.id !== id) return h;
       const done = {...(h.done||{})};
       done[day] = !done[day];
@@ -447,13 +467,20 @@ function HabitosApp({ habits, setHabits }) {
           </thead>
           <tbody>
             {habits.map(h => {
-              // compute current streak
+              // Racha actual: contamos desde el final hacia atrás en los últimos
+              // 14 días. Pequeño matiz: si HOY aún no está marcado pero AYER sí,
+              // la racha debe ser la de ayer — no romper a 0 solo porque el día
+              // acaba de empezar y el usuario todavía no ha marcado. Así evitamos
+              // el "🔥0" frustrante a primera hora.
+              const doneMap = h.done || {};
               let streak = 0;
-              for (let i = days.length - 1; i>=0; i--) {
-                if (h.done && h.done[days[i].key]) streak++;
+              let i = days.length - 1;
+              if (i >= 0 && !doneMap[days[i].key]) i--; // saltamos hoy si no está marcado aún
+              for (; i >= 0; i--) {
+                if (doneMap[days[i].key]) streak++;
                 else break;
               }
-              const total = Object.keys(h.done||{}).length;
+              const total = Object.keys(doneMap).length;
               return (
                 <tr key={h.id}>
                   <td style={{padding:'4px 6px', fontWeight:600}}>{h.name}
@@ -489,11 +516,11 @@ function SeriesApp() {
 
   const add = () => {
     if (!draft.title.trim()) return;
-    setList([...list, { ...draft, id: Date.now() }]);
+    setList(prev => [...prev, { ...draft, id: Date.now() }]);
     setDraft({ title: '', year: '', status: 'pendiente', rating: 0, season: 1, episode: 0, notes: '' });
   };
-  const update = (id, patch) => setList(list.map(x => x.id === id ? { ...x, ...patch } : x));
-  const del = (id) => setList(list.filter(x => x.id !== id));
+  const update = (id, patch) => setList(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+  const del = (id) => setList(prev => prev.filter(x => x.id !== id));
 
   const filtered = list.filter(x => filter === 'todos' || x.status === filter);
   const cycleStatus = (s) => s === 'pendiente' ? 'viendo' : s === 'viendo' ? 'vista' : s === 'vista' ? 'abandonada' : 'pendiente';
@@ -554,11 +581,11 @@ function JuegosApp() {
 
   const add = () => {
     if (!draft.title.trim()) return;
-    setList([...list, { ...draft, id: Date.now() }]);
+    setList(prev => [...prev, { ...draft, id: Date.now() }]);
     setDraft({ title: '', platform: '', status: 'pendiente', rating: 0, horas: 0, notes: '' });
   };
-  const update = (id, patch) => setList(list.map(x => x.id === id ? { ...x, ...patch } : x));
-  const del = (id) => setList(list.filter(x => x.id !== id));
+  const update = (id, patch) => setList(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+  const del = (id) => setList(prev => prev.filter(x => x.id !== id));
 
   const filtered = list.filter(x => filter === 'todos' || x.status === filter);
   const cycleStatus = (s) => s === 'pendiente' ? 'jugando' : s === 'jugando' ? 'completado' : s === 'completado' ? 'abandonado' : 'pendiente';

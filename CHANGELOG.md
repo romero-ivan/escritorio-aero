@@ -1,5 +1,137 @@
 # Changelog — Escritorio Aero
 
+## [2026-04-23c] - Performance: Lighthouse 50 → (objetivo 90+). Pre-build JSX, React prod, etc.
+
+### Por qué Lighthouse daba 50% en Performance
+
+El informe (`lighthouse.pdf`) identificaba 3 problemas sistémicos:
+
+1. **`@babel/standalone` transpilando JSX en el navegador**: 639 KiB de descarga + 1,147 ms de CPU en el main thread antes de poder renderizar nada.
+2. **React en modo development en producción**: `react.development.js` + `react-dom.development.js` ocupan ~256 KiB y son 2-3× más lentos que los builds `.production.min` (y llevan warnings/invariants que no necesitamos en prod).
+3. **Waterfall de 10 archivos `<script type="text/babel">`**: cada `.jsx` era una request separada a unpkg, todas bloqueando render.
+
+Resultado combinado: LCP 2.1 s, TBT 990 ms, `Element render delay` del LCP = 2,160 ms (el reloj no podía pintar hasta que todo esto terminaba).
+
+### Solución
+
+- **Pre-compilación de JSX** (`build.sh`) — nuevo script que concatena los 10 `.jsx` (en el orden correcto: App.jsx al final porque hace el `ReactDOM.createRoot().render()`) y los pasa por `esbuild` con `--loader=jsx --minify --target=es2020`. Output: `dist/app.<hash>.js` con hash de contenido (primeros 10 chars del sha256) para cache inmutable. El script reescribe el `<script src="dist/app.XXX.js">` en `Escritorio.html` automáticamente. Bundle final: **145 KiB** (vs los 639 KiB de babel + 90 KiB de JSX sin minificar que tenían que descargarse y compilarse en cliente).
+- **React 18.3.1 production builds** en `Escritorio.html` — `react.production.min.js` + `react-dom.production.min.js`. Integrity SHA-384 recalculados contra unpkg real (no inventados). Elimina ~144 KiB de descarga y mejora el runtime 2-3×.
+- **Preconnect hints** en el `<head>` para `www.gstatic.com`, `firestore.googleapis.com` e `identitytoolkit.googleapis.com`. El navegador abre DNS+TLS en paralelo al parseo del HTML en vez de esperar al primer `<script src>`. Lighthouse estimaba 150 ms de ahorro solo por identitytoolkit.
+- **`icono.webp` redimensionado** de 628×500 a 224×178 (2× del tamaño real en pantalla 112×89, para retina). Conversión `dwebp → sips → cwebp -q 85 -m 6`. Peso: **48 KiB → 9.5 KiB** (-80%).
+- **Cache policy en `firebase.json`**: `/dist/**` con `Cache-Control: public, max-age=31536000, immutable` (el hash en el nombre nos permite cache eterno sin miedo); imágenes con `max-age=604800` (1 semana); HTML y el resto siguen con `no-cache` para que los deploys se vean al instante.
+- **`aero.css` @import de Google Fonts** ya lo habíamos quitado en `[2026-04-22a]` — relevante aquí porque estaba siendo bloqueado por CSP y suma una request más al waterfall.
+
+### Qué NO cambia (compatibilidad)
+
+- La CSP sigue teniendo `'unsafe-eval'` en `script-src`. Era estrictamente necesario para `@babel/standalone`; ahora que ese script ya no se carga, se podría quitar, pero Firebase Auth lo usa internamente en algunos flujos. Dejado para un PR dedicado a CSP.
+- El código fuente (`components/*.jsx`) sigue siendo JSX legible. Solo cambia el proceso de publicación: `./build.sh && firebase deploy --only hosting` en vez de deploy directo.
+
+### Archivos tocados
+- `build.sh` (nuevo): script de build con esbuild.
+- `package-lock.json` (nuevo) + `node_modules/` (gitignored): esbuild como dev dep no commiteada.
+- `Escritorio.html`: preconnect, React prod URLs con integrity correcto, `<script src="dist/app.HASH.js">` reemplazando los 11 `<script type="text/babel">` anteriores.
+- `firebase.json`: 2 nuevas reglas de `headers` para `/dist/**` y `**/*.{webp,png,...}` con cache largo.
+- `firebase-config.js`: bump AERO_VERSION a `v2026-04-23c`.
+- `icono.webp`: 628×500 → 224×178, 48 KiB → 9.5 KiB.
+- `dist/app.94675d95fe.js`: bundle minificado (SÍ se commitea — hash en el nombre evita churn accidental y garantiza que deploys sean reproducibles desde git).
+
+### Mejora estimada (pendiente validar con Lighthouse post-deploy)
+
+- Transfer de JS crítico: ~895 KiB → ~285 KiB (-68%).
+- Main thread work: -1,400 ms aproximadamente (fuera babel parse + eval + transpile).
+- LCP: de 2.1 s a ~0.6-0.8 s esperado.
+- TBT: de 990 ms a <200 ms esperado.
+
+## [2026-04-23b] - Bug hunt: 20+ arreglos (concurrencia React, fechas/DST, iPhone touch, batería, sync)
+
+### Fixes de concurrencia / stale closure (setState functional form)
+
+- **`setX(x.map(...))` → `setX(prev => prev.map(...))`** en ~18 sitios. Antes, doble-Enter o doble-tap rápido perdía la segunda actualización: el segundo click capturaba la misma referencia de estado que el primero porque React aún no había procesado el re-render.
+  - `Apps.jsx`: TareasFPApp (`add`/`toggle`/`del`/`addModulo`/`delModulo`/`editModuloColor`/`loadDefaults`), DiarioApp (`setCur`/`toggleExpand`), FinanzasApp (`addExtraordinary`/`delExtraordinary`/`archiveYear`), MedicoApp (`addMed`/`addPat`/`onAnal`/deletes/notas), CalendarioApp (`addEv`/`delEv`/`toggleFestivo`).
+  - `Apps2.jsx`: AnimesApp, PelisApp, ProyectosApp, RecursosApp, HabitosApp, SeriesApp, JuegosApp.
+  - `Gadgets.jsx`: HabitsGadget.toggle.
+  - `App.jsx`: openApp/closeWindow/focusWindow/minimizeWindow/focusToggle.
+- **`[...arr].sort(...)` en FinanzasApp** (`Apps.jsx:~693`): `Array.prototype.sort` muta el array original. Spread antes evita mutar el estado y mantiene comparaciones shallow válidas.
+
+### Fixes de fechas / timezone
+
+- **`daysLeft(due)`** (`Apps.jsx:~133`): parseaba `'YYYY-MM-DD'` como UTC, lo que en UTC+2 (Madrid verano) daba días extra/menos en el cambio de DST (último domingo de marzo, último de octubre) y en horas pequeñas. Ahora parsea local y compara con medianoche local — robusto a DST.
+- **`m.fin` en medicamentos** (`Apps.jsx:~987`): misma causa raíz. Un medicamento con `fin = hoy` salía "finalizado" antes de tiempo. Ahora compara contra `T23:59:59` local.
+- **DiarioApp `entries[d] || {}`** (`Apps.jsx:~354`): la sidebar crasheaba al leer `.mood` si una entrada llegaba nula (import legacy, sync de otro dispositivo con formato viejo).
+- **EventsGadget re-tick a medianoche** (`Gadgets.jsx`): si dejabas la app abierta durante la noche, al cruzar las 00:00 la etiqueta "Hoy" seguía mostrando el día anterior hasta que algo más disparara el re-cómputo. Ahora programa un `setTimeout` al siguiente midnight y re-calcula.
+- **HabitosApp streak** (`Apps2.jsx:~473`): la racha caía a 🔥0 al abrir la app por la mañana si todavía no habías marcado hoy. Ahora, si hoy no está marcado, arranca desde ayer — deja de castigar el no-haber-marcado-aún.
+
+### Fixes de iPhone / touch / batería
+
+- **Window.jsx reescrito con Pointer Events**: las ventanas no eran arrastrables en iPhone/iPad (solo `mousedown`). Pointer Events unifica mouse+touch+pen con `setPointerCapture`. Además cierra el bug de stale closure: los handlers de move/up se creaban en cada render y `removeEventListener` no eliminaba la referencia correcta → listeners fantasma tras varios drags. Añadido `touch-action:none` para evitar que iOS interprete el arrastre como scroll.
+- **ClockGadget pausa en visibility** (`Gadgets.jsx:~160`): `setInterval(1s)` seguía corriendo con la pestaña oculta — drenaba batería iOS. Ahora escucha `visibilitychange`, pausa al ocultar y reprovisiona al volver (con `setNow(new Date())` inmediato para no aparecer desfasado).
+- **Taskbar dueño del reloj** (`Taskbar.jsx` + `App.jsx`): el estado `clock` vivía en `App` root y se actualizaba cada 30s, re-renderizando todo el árbol (ventanas abiertas, gadgets con SVG charts, heatmaps). Ahora vive en Taskbar, aislado. Además pausa en visibility.
+
+### Fixes de sync / Firebase
+
+- **Chip no muestra verde si hay `persistedPending`** (`firebase-config.js:~218`): antes el chip volvía a ☁ verde en cuanto `pendingWrites` caía a 0, aunque quedasen writes persistidos sin confirmar (post-crash, tras red mala). El usuario creía "todo sincronizado" con data latente. Ahora muestra `↻` ámbar si `Object.keys(persistedPending).length > 0`.
+- **permission-denied con retry + back-off** (`firebase-config.js:~410`): antes, el primer `permission-denied` disparaba `auth.signOut()` inmediato. En iOS Safari en background, el token a veces falla transitoriamente y el usuario se encontraba con pantalla de login donde tenía su escritorio. Ahora cuenta 3 fallos consecutivos con back-off (3s × n) antes de forzar signOut. Éxito de snapshot resetea el contador.
+
+### Fixes varios
+
+- **`openAnalitica` regex robusto para base64** (`Apps.jsx:~928`): `endsWith(';base64')` fallaba con `data:application/pdf;charset=utf-8;base64,...` o con espacios. Ahora `/;\s*base64\b/i`.
+- **Blob URL revoke de 60s → 300s** (`Apps.jsx:~960`): en iPhone un PDF grande tarda en renderizar en la pestaña nueva, y si cerrabas la ventana Médico antes de 60s el blob desaparecía → PDF error.
+- **`onExport` yield antes de revokeObjectURL** (`App.jsx:~190`): en Safari iOS revocar síncronamente el blob bajaba archivo de 0 bytes. Ahora `setTimeout(revoke, 0)` da un tick al event loop.
+- **`onExport` con confirm de privacidad**: aviso explícito antes de descargar — el JSON va sin cifrar e incluye diario/médico/finanzas. Evita que el usuario lo suba inadvertidamente a iCloud/Dropbox.
+- **`postMessage` solo si estamos iframed** (`App.jsx:~112`): cuando `window.parent === window` (caso normal), el postMessage se enviaba a sí mismo y el handler lo procesaba inútilmente cada render. Ahora solo se dispara si realmente hay un parent distinto.
+- **Recursos: validación de tamaño + MIME whitelist** (`Apps2.jsx:~350`): mismo cuidado que analíticas médicas. Antes una imagen de 2 MB desde el móvil enviaba el sync al rojo sin aviso.
+
+### Archivos tocados
+
+- `components/App.jsx`: postMessage guard, export con confirm+yield, setState functional en todos los handlers de ventanas, clock state eliminado.
+- `components/Taskbar.jsx`: clock local con pausa en visibility.
+- `components/Window.jsx`: reescrito con Pointer Events, touch-action:none, handlers locales sin stale closure.
+- `components/Apps.jsx`: ~25 edits (setState functional, daysLeft con T00:00:00, m.fin con T23:59:59, DiarioApp guard, FinanzasApp no-mutate sort, openAnalitica regex+5min revoke).
+- `components/Apps2.jsx`: ~15 edits (setState functional en todas las apps, HabitosApp streak desde ayer, addImage con size+MIME).
+- `components/Gadgets.jsx`: ClockGadget visibility, HabitsGadget functional, EventsGadget midnight tick.
+- `firebase-config.js`: `updateChipHealth()` que considera persistedPending, permDeniedCount con retry back-off, bump a `v2026-04-23b`.
+
+## [2026-04-23a] - Hardening tanda 1: leak de .git, validación analíticas, purga en logout, headers endurecidos
+
+### Security (raíz: auditoría exhaustiva con 4 agents paralelos)
+
+- **C1 — Fix CRÍTICO: `.git/` estaba servido públicamente en producción** — `firebase.json`
+  - El glob `"**/.*"` del `ignore` NO matcheaba carpetas ocultas al nivel raíz de `"public": "."`. Resultado: `curl https://escritorio-aero.web.app/.git/config` devolvía el config completo (incluyendo `user@example.com` y la URL del repo). Con `git-dumper` se reconstruía el repo entero en 30s.
+  - Arreglado: `ignore` pasa a array explícito con `.git`, `.git/**`, `.firebase`, `.firebase/**`, `.claude`, `.claude/**`, `.vscode/**`, `.idea/**`, `node_modules`, `node_modules/**`, más los patrones existentes. Verificar tras deploy: `curl -I /.git/HEAD` debe devolver `text/html` (SPA fallback), no `text/plain`.
+
+- **H2 — Validación de analíticas médicas: tamaño + MIME whitelist + magic bytes** — `components/Apps.jsx`
+  - Cap de tamaño a 500 KB (antes, un PDF >700 KB envenenaba el sync silenciosamente al superar el límite de 1 MB/doc de Firestore).
+  - MIME whitelist: solo `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
+  - Verificación de magic bytes (primeros 16 bytes) para confirmar que el contenido coincide con el MIME declarado. Un `.html` renombrado `.pdf` se rechaza antes de persistir. Cierra el vector de blob URL ejecutable con MIME `text/html` que señalaba el ultrareview (H1).
+
+- **H3 — Purga de datos locales al logout + "Borrar y salir"** — `firebase-config.js`
+  - `onAuthStateChanged(!user)` ahora limpia `driveToken` y `offlineQueue` siempre. Antes, el token OAuth de Drive sobrevivía al signOut (seguía siendo válido hasta expirar).
+  - Nuevo botón en el diag `🧹 Borrar y salir` (`AeroCloud.hardSignOut()`) que purga todo: `store` en memoria, `CACHE_KEY`, `PENDING_KEY`, flags de migración, `__last_drive_backup`, `persistedPending`, `pending`, `pendingWrites`, `driveToken`, `offlineQueue`. Tras esto, DevTools → Application → Local Storage no muestra datos sensibles. Los datos en Firestore NO se tocan.
+  - Confirms de sign-out actualizados con texto más claro ("usa Borrar y salir si quieres purgarla").
+
+- **M4 + M5 + M10 + M9 — Headers HTTP endurecidos** — `firebase.json`
+  - CSP: añadidas `frame-ancestors 'none'`, `worker-src 'none'`, `child-src 'none'`, `upgrade-insecure-requests`. `frame-ancestors` es el reemplazo moderno de `X-Frame-Options` (mantenemos ambos por belt+suspenders). `worker-src/child-src 'none'` cierra la posibilidad de spawner Workers bajo `default-src` si algún XSS llega a ejecutar.
+  - `Permissions-Policy` expandida de 4 directivas a 31: bloquea `usb, serial, hid, bluetooth, clipboard-read, display-capture, xr-spatial-tracking, browsing-topics, encrypted-media, gyroscope, magnetometer, accelerometer, midi, ...` — ninguna se usa y todas pueden ser abusadas desde XSS/iframe injection.
+  - `Strict-Transport-Security` ampliado de `max-age=31536000; includeSubDomains` a `max-age=63072000; includeSubDomains; preload` (alinea con lo que Firebase Hosting ya envía y permite registrar en hstspreload.org).
+  - Nuevos: `Cross-Origin-Opener-Policy: same-origin-allow-popups` (permite `signInWithPopup` de Google OAuth pero aísla `window.opener`), `Cross-Origin-Resource-Policy: same-origin` (impide hotlinking de nuestros assets desde otros orígenes).
+
+- **M7 — Diag panel redactado** — `firebase-config.js`
+  - Email truncado (`iv***@gmail.com`) y UID recortado a 8 chars en el state del diag.
+  - Dump store redacta contenido de claves sensibles (`diario`, `medico`, `finanzas`, `cal_events`) con `[REDACTED]`. El tamaño sigue siendo visible para debug pero no el preview del contenido — evita fugas si el usuario comparte una captura del diag para soporte.
+  - Nueva constante `SENSITIVE_KEYS` exportable (pivote futuro para E2EE selectivo).
+
+### Archivos tocados
+
+- `firebase.json`: ignore reescrito como array explícito; Permissions-Policy completa; HSTS 2 años + preload; COOP/CORP nuevos; CSP con frame-ancestors/worker-src/child-src/upgrade-insecure-requests.
+- `firebase-config.js`: `hardSignOut()` nueva función; limpieza de driveToken/offlineQueue en auth signOut; redactEmail + SENSITIVE_KEYS; diag con redacción; nuevo botón 🧹 en modal; bump a `v2026-04-23a`.
+- `components/Apps.jsx`: `SAFE_ANAL_MIMES`, `MAX_ANAL_SIZE`, `checkAnalMagicBytes()`, `onAnal` reescrito con 3 capas de validación.
+
+### Pendiente (tandas siguientes — decisiones / trabajo manual)
+
+- **Tanda 2 (manual en consolas Google)**: activar Firebase App Check (reCAPTCHA v3) + restringir API key en GCP Console a HTTP referrers del dominio.
+- **Tanda 3 (decisiones de diseño)**: endurecer `firestore.rules` con whitelist de campos/tipos/tamaños + `sign_in_provider == 'google.com'`; SRI en scripts de `gstatic.com/firebasejs/10.14.1/*`; cifrado del backup a Drive.
+- **Tanda 4 (refactor)**: pre-build con esbuild → eliminar Babel Standalone del navegador → quitar `'unsafe-eval'` + dev builds de React; E2EE selectivo para SENSITIVE_KEYS con WebCrypto + passphrase; autorización por UID inmutable (no por email).
+
 ## [2026-04-22a] - CSP hardening + follow-ups del ultrareview
 
 ### Security (CSP — PR #1)

@@ -1,5 +1,22 @@
-// Taskbar — start orb, open windows, tray clock
-function Taskbar({ windows, focused, onFocusToggle, onStart, clock }) {
+// Taskbar — start orb, open windows, tray clock.
+// El reloj vive aquí (no en App root) para aislar su re-render de 30s del
+// resto del árbol (ventanas, gadgets con SVG charts). Además se pausa cuando
+// la pestaña queda oculta: en iOS cada setInterval activo consume batería
+// incluso con pantalla apagada.
+function Taskbar({ windows, focused, onFocusToggle, onStart }) {
+  const [clock, setClock] = React.useState(new Date());
+  React.useEffect(() => {
+    let timer;
+    const start = () => { timer = setInterval(() => setClock(new Date()), 30000); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const onVis = () => {
+      if (document.hidden) { stop(); }
+      else { setClock(new Date()); if (!timer) start(); }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
   return (
     <div className="taskbar">
       <div className="start-orb" onClick={onStart}>

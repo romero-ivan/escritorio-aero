@@ -159,8 +159,20 @@ window.computeSunTimes = computeSunTimes;
 function ClockGadget() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    // Tick de 1s solo mientras la pestaña esté visible. Antes corría aunque
+    // la pestaña estuviera en background: iOS Safari throttlea pero no pausa,
+    // así que drenaba batería sin motivo. Al volver a visible, actualizamos
+    // inmediatamente con `new Date()` para que el reloj no aparezca desfasado.
+    let timer = null;
+    const start = () => { timer = setInterval(() => setNow(new Date()), 1000); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { setNow(new Date()); if (!timer) start(); }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, []);
   // Ciudad actual (sincronizada via AeroCloud, default Madrid)
   const [city, setCity] = useLocal('clock_city', CLOCK_CITIES[0]);
@@ -407,6 +419,21 @@ function EventsGadget({ onOpenCalendar }) {
   const [events] = useLocal('cal_events', {});
   const [festivos] = useLocal('cal_festivos', []);
 
+  // Tick a medianoche: sin esto, si dejas la app abierta durante la noche, al
+  // cruzar las 00:00 la etiqueta "Hoy" sigue apuntando al día anterior hasta
+  // que algo más dispare el re-cómputo. Ahora recalculamos justo al cambio.
+  const [dayTick, setDayTick] = useState(0);
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      const now = new Date();
+      const next = new Date(now); next.setHours(24, 0, 1, 0);
+      timer = setTimeout(() => { setDayTick(t => t + 1); schedule(); }, next - now);
+    };
+    schedule();
+    return () => { if (timer) clearTimeout(timer); };
+  }, []);
+
   const items = React.useMemo(() => {
     const out = [];
     const today = new Date(); today.setHours(0,0,0,0);
@@ -469,7 +496,7 @@ function EventsGadget({ onOpenCalendar }) {
 
     out.sort((a, b) => a.date.localeCompare(b.date));
     return out;
-  }, [fpTasks, fpModulos, events, festivos]);
+  }, [fpTasks, fpModulos, events, festivos, dayTick]);
 
   const label = (isoDay) => {
     const d = new Date(isoDay + 'T00:00:00');
@@ -535,7 +562,7 @@ function EventsGadget({ onOpenCalendar }) {
 function HabitsGadget({ habits, setHabits }) {
   const t = todayKey();
   const toggle = (id) => {
-    setHabits(habits.map(h => {
+    setHabits(prev => prev.map(h => {
       if (h.id !== id) return h;
       const done = {...(h.done||{})};
       done[t] = !done[t];

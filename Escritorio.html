@@ -8,10 +8,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Escritorio">
 <title>Mi Escritorio — Aero</title>
+
+<!-- Preconnect a los dos orígenes que sí usamos en carga inicial. Con esto el
+     navegador hace DNS+TLS en paralelo al HTML y no esperamos al final del
+     parse para abrir la conexión. Ahorra ~100-200 ms de LCP. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+
 <link rel="stylesheet" href="aero.css">
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- React 18.3.1 EN PRODUCCIÓN: .production.min.js es ~8× más pequeño que
+     .development.js, no incluye warnings/invariants, y ejecuta 2-3× más rápido
+     en runtime. Usar .development en producción era uno de los principales
+     motivos del 50% en Lighthouse. -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
+
+<!-- IMPORTANTE: ya NO cargamos @babel/standalone (eran 639 KiB + 1.1s de
+     compilación en main thread por carga). El JSX se pre-compila con esbuild
+     en ./build.sh antes del deploy y se sirve como dist/app.<hash>.js. -->
+
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -35,16 +52,10 @@
      nativo. Sin esto, en WebKit iOS el hook podría no capturar writes. -->
 <script src="firebase-config.js"></script>
 
-<!-- Wallpaper layer (SVG backgrounds) -->
-<script type="text/babel" src="components/Wallpaper.jsx"></script>
-<script type="text/babel" src="components/Particles.jsx"></script>
-<script type="text/babel" src="components/Window.jsx"></script>
-<script type="text/babel" src="components/Icons.jsx"></script>
-<script type="text/babel" src="components/Gadgets.jsx"></script>
-<script type="text/babel" src="components/Apps.jsx"></script>
-<script type="text/babel" src="components/Apps2.jsx"></script>
-<script type="text/babel" src="components/Taskbar.jsx"></script>
-<script type="text/babel" src="components/Tweaks.jsx"></script>
-<script type="text/babel" src="components/App.jsx"></script>
+<!-- Bundle con todos los componentes JSX pre-compilados + minificados.
+     El hash en el nombre hace el cache inmutable (firebase.json tiene
+     max-age=31536000 para dist/**). Al tocar código, ./build.sh regenera el
+     hash y reescribe esta línea automáticamente. -->
+<script src="dist/app.94675d95fe.js"></script>
 </body>
 </html>

@@ -23,3 +23,7 @@ node_modules/
 .claude/
 *.swp
 *.swo
+
+# Build tooling / reports — solo presentes local, no al repo
+package-lock.json
+lighthouse.pdf

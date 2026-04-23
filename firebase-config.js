@@ -14,7 +14,7 @@
 // --- Stamp de versión visible SIEMPRE en pantalla (fuera del IIFE para que se ejecute
 //     incluso si el IIFE crashea). Sirve para confirmar que el navegador cargó esta
 //     versión y no una cacheada. ---
-const AERO_VERSION = 'v2026-04-22a';
+const AERO_VERSION = 'v2026-04-23c';
 function aeroMountVersionStamp() {
   if (!document.body) { setTimeout(aeroMountVersionStamp, 30); return; }
   if (document.getElementById('aero-version-stamp')) return;
@@ -74,6 +74,7 @@ try {
   let initialSyncTimeoutWarned = false;
   let lastPushErr = null;
   let pendingWrites = 0;         // nº de writes en vuelo (para el chip)
+  let permDeniedCount = 0;       // permission-denied consecutivos (ver subscribeToCloud err handler)
   // Estado del modal diag — declarado AQUÍ (no más abajo) para evitar TDZ:
   // log() puede dispararse en boot → llama updateDiagIfOpen() → necesita diagOpen.
   let diagOpen = false;
@@ -214,6 +215,21 @@ try {
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(store)); } catch {}
   }
 
+  // El chip solo muestra verde si NO hay writes en vuelo Y no hay error
+  // reciente Y no hay writes persistidos sin confirmar. Antes el chip volvía
+  // a verde en cuanto `pendingWrites` caía a 0, ocultando que quedaban
+  // entradas en `persistedPending` (ej. tras un crash o red mala). El usuario
+  // veía "todo sincronizado" cuando en realidad había data sin subir.
+  function updateChipHealth() {
+    if (pendingWrites > 0) return; // aún escribiendo, no tocar
+    if (lastPushErr) { setChip('⚠', '#e66'); return; }
+    if (Object.keys(persistedPending).length > 0) {
+      setChip('↻', '#e8a020'); // ámbar: hay pendings latentes a reintentar
+      return;
+    }
+    setChip('☁', '#4a8');
+  }
+
   // ============================================================
   //            ESCRITURAS A FIRESTORE (por-campo, merge)
   // ============================================================
@@ -252,7 +268,7 @@ try {
         delete persistedPending[key];
         savePersistedPending();
       }
-      if (pendingWrites === 0 && !lastPushErr) setChip('☁', '#4a8');
+      updateChipHealth();
     }
   }
 
@@ -290,7 +306,7 @@ try {
         delete persistedPending[key];
         savePersistedPending();
       }
-      if (pendingWrites === 0 && !lastPushErr) setChip('☁', '#4a8');
+      updateChipHealth();
     }
   }
 
@@ -331,6 +347,8 @@ try {
         hideOverlay();
         setChip('☁', '#4a8');
       }
+      // Éxito → reseteamos contador de permission-denied transitorios.
+      permDeniedCount = 0;
       const migrating = localStorage.getItem('__aero_migrated_v2') !== '1';
       const cloudLs = (snap.exists && snap.data().ls) || {};
       const data = snap.exists ? snap.data() : {};
@@ -381,11 +399,34 @@ try {
     }, (err) => {
       log('⚠ snapshot error: ' + (err?.code || err?.message || err));
       if (err && err.code === 'permission-denied') {
-        setLoginStatus('Este escritorio es privado.');
-        driveToken = null;
-        auth.signOut();
+        // Antes: signOut inmediato al primer permission-denied. Problema: en
+        // iOS Safari en background el token a veces falla transitoriamente
+        // (refresh race, red rarísima) → el usuario abría la app y se
+        // encontraba con la pantalla de login donde tenía su escritorio.
+        // Ahora: contamos permission-denied consecutivos por sesión y solo
+        // forzamos signOut tras 3 fallos con back-off, dando margen a que
+        // un token refresh lo resuelva solo.
+        permDeniedCount++;
+        log('  permission-denied #' + permDeniedCount + ' (retry con back-off)');
+        if (permDeniedCount >= 3) {
+          setLoginStatus('Este escritorio es privado.');
+          driveToken = null;
+          auth.signOut();
+          permDeniedCount = 0;
+          return;
+        }
+        setChip('⚠', '#e66');
+        setTimeout(() => {
+          if (currentUser) {
+            if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+            subscribeToCloud();
+          }
+        }, 3000 * permDeniedCount);
         return;
       }
+      // Cualquier otro error: reset del contador (éxito parcial implicaría
+      // que el permission-denied no era permanente).
+      permDeniedCount = 0;
       setChip('⚠', '#e66');
     });
   }
@@ -399,10 +440,17 @@ try {
     if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
     initialSyncDone = false;
     initialSyncTimeoutWarned = false;
+    permDeniedCount = 0;
     if (!user) {
       log('auth: signed out');
       showOverlay();
       setChip('☁', '');
+      // Hardening v2026-04-23a: siempre limpiar el token OAuth de Drive y la
+      // cola offline al desloguearse. La caché de lectura (CACHE_KEY) se mantiene
+      // por defecto para tolerar logins intermitentes; para purgarla del todo
+      // el usuario debe usar "Borrar y salir" en el diag.
+      driveToken = null;
+      offlineQueue.length = 0;
       return;
     }
     log('auth: signed in as ' + (user.email || user.uid));
@@ -486,6 +534,7 @@ try {
         <button id="diag-test-write" style="flex:1;min-width:110px;padding:8px;background:#a73;border:none;color:#fff;border-radius:6px;cursor:pointer;font-weight:600">✎ Test write</button>
         <button id="diag-dump" style="flex:1;min-width:110px;padding:8px;background:#73a;border:none;color:#fff;border-radius:6px;cursor:pointer;font-weight:600">📋 dump store</button>
         <button id="diag-signout" style="flex:1;min-width:110px;padding:8px;background:#a33;border:none;color:#fff;border-radius:6px;cursor:pointer;font-weight:600">↪ Sign out</button>
+        <button id="diag-hardsignout" style="flex:1;min-width:110px;padding:8px;background:#722;border:none;color:#fff;border-radius:6px;cursor:pointer;font-weight:600">🧹 Borrar y salir</button>
       </div>
       <div style="font-size:10px;opacity:0.7;margin-bottom:4px">Log en vivo (últimos ${DIAG_LOG_MAX}):</div>
       <div id="diag-log" style="background:#0a0a15;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:10px;max-height:260px;overflow:auto;line-height:1.4"></div>
@@ -505,11 +554,25 @@ try {
     diagModal.style.display = 'none';
     if (diagTimer) { clearInterval(diagTimer); diagTimer = null; }
   }
+  // Hardening v2026-04-23a: redacta email para capturas/screenshots compartidos
+  // en soporte. "dev@example.com" → "iv***@gmail.com".
+  function redactEmail(e) {
+    if (!e) return '(no login)';
+    const at = e.indexOf('@');
+    if (at < 2) return e;
+    return e.slice(0, 2) + '***' + e.slice(at);
+  }
+
+  // Claves con contenido sensible (diario, médico, finanzas, agenda). Se usan
+  // para redactar previews en el dump del diag y como pivote futuro para E2EE
+  // selectiva (ver informe de seguridad).
+  const SENSITIVE_KEYS = new Set(['diario', 'medico', 'finanzas', 'cal_events']);
+
   function updateDiagIfOpen() {
     if (!diagOpen) return;
     const state = [
-      `user: ${currentUser?.email || '(no login)'}`,
-      `uid: ${currentUser?.uid || '-'}`,
+      `user: ${redactEmail(currentUser?.email)}`,
+      `uid: ${currentUser?.uid ? currentUser.uid.slice(0,8) + '…' : '-'}`,
       `clientId: ${clientId}`,
       `initialSyncDone: ${initialSyncDone}`,
       `pendingWrites: ${pendingWrites}`,
@@ -543,17 +606,25 @@ try {
     log('📋 dump store:');
     Object.entries(store).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k, v]) => {
       const s = JSON.stringify(v);
-      const preview = s.length > 40 ? s.slice(0,40) + '…' : s;
+      // Para claves sensibles, NO mostrar preview del contenido (evita fugas en
+      // screenshots que el usuario pueda compartir para debug).
+      const preview = SENSITIVE_KEYS.has(k) ? '[REDACTED]'
+        : (s.length > 40 ? s.slice(0,40) + '…' : s);
       log('  ' + k + ' (' + s.length + 'b): ' + preview);
     });
     log('📋 total: ' + Object.keys(store).length + ' claves');
   });
   diagModal.querySelector('#diag-signout').addEventListener('click', () => {
-    if (confirm('¿Cerrar sesión? La caché local no se toca.')) auth.signOut();
+    if (confirm('¿Cerrar sesión? La caché local se mantiene (usa "Borrar y salir" si quieres purgarla).')) auth.signOut();
+  });
+  diagModal.querySelector('#diag-hardsignout').addEventListener('click', () => {
+    if (confirm('¿Cerrar sesión y BORRAR todos los datos locales (caché, cola pendiente, token de Drive)? Los datos en Firestore NO se tocan — podrás recuperarlos al volver a iniciar sesión.')) {
+      hardSignOut();
+    }
   });
   chip.addEventListener('click', () => {
     if (!currentUser) return;
-    if (confirm('¿Cerrar sesión? La caché local no se toca.')) auth.signOut();
+    if (confirm('¿Cerrar sesión? La caché local se mantiene (usa 🔧 diag → "Borrar y salir" si quieres purgarla).')) auth.signOut();
   });
 
   // Mount UI: si body ya existe, append YA. Si no, esperar a DOMContentLoaded.
@@ -582,6 +653,27 @@ try {
     }).catch(err => {
       setLoginStatus('Error: ' + err.message);
     });
+  }
+
+  // Hardening v2026-04-23a: "Borrar y salir" — purga agresiva para dispositivos
+  // compartidos, prestados o que se van a vender. Elimina TODO rastro local de
+  // datos del usuario antes de auth.signOut(). Los datos en Firestore NO se
+  // tocan: el usuario los recupera al volver a iniciar sesión.
+  function hardSignOut() {
+    Object.keys(store).forEach(k => { delete store[k]; notify(k, undefined); });
+    try {
+      localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem(PENDING_KEY);
+      localStorage.removeItem('__aero_migrated_v2');
+      localStorage.removeItem('__last_drive_backup');
+    } catch {}
+    persistedPending = {};
+    pending.clear();
+    pendingWrites = 0;
+    driveToken = null;
+    offlineQueue.length = 0;
+    log('🧹 hard signout: datos locales purgados');
+    auth.signOut();
   }
 
   // ============================================================
@@ -634,6 +726,7 @@ try {
     get, set, remove, subscribe,
     backupToDrive,
     signOut: () => auth.signOut(),
+    hardSignOut,
     get user() { return currentUser; },
     showDiag,
     // Export/Import helpers

@@ -61,7 +61,6 @@ function App() {
   const [focusedId, setFocusedId] = aS(null);
   const [selectedIcon, setSelectedIcon] = aS(null);
   const [zTop, setZTop] = aS(100);
-  const [clock, setClock] = aS(new Date());
 
   // Shared state needed by multiple windows/gadgets
   const [habits, setHabits] = window.useLocal('habits', []);
@@ -77,8 +76,9 @@ function App() {
     try { localStorage.setItem('__photos_purged', '1'); } catch {}
   }, []);
 
-  // Clock tick
-  aE(() => { const t = setInterval(()=>setClock(new Date()), 30000); return () => clearInterval(t); }, []);
+  // El reloj vive dentro del Taskbar (único consumidor). Antes vivía aquí y
+  // refrescaba cada 30s, provocando re-render del árbol completo (ventanas,
+  // gadgets con SVG charts, heatmaps). Mover el estado al Taskbar aísla el tick.
 
   // Aplicar tweaks al DOM (ya persisten vía useLocal)
   aE(() => {
@@ -107,57 +107,77 @@ function App() {
       if (e.data?.type === '__deactivate_edit_mode') setTweaksVisible(false);
     };
     window.addEventListener('message', handler);
-    window.parent.postMessage({type:'__edit_mode_available'}, window.location.origin);
+    // Solo anunciamos el modo edit si estamos realmente iframed (host externo).
+    // En top-level (caso normal), window.parent === window → postMessage a
+    // nosotros mismos dispara el handler inútilmente cada render.
+    if (window.parent !== window) {
+      window.parent.postMessage({type:'__edit_mode_available'}, window.location.origin);
+    }
     return () => window.removeEventListener('message', handler);
   }, []);
 
   const applyTweak = (patch) => {
     const next = {...tweaks, ...patch};
     setTweaks(next);
-    window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, window.location.origin);
+    if (window.parent !== window) {
+      window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, window.location.origin);
+    }
   };
 
+  // Todos los setState que derivan del estado previo usan la forma funcional
+  // (`setX(prev => ...)`). Antes usaban la variable del cierre → doble-clic
+  // rápido perdía la segunda actualización porque React aún no había procesado
+  // la primera.
   const openApp = (key) => {
     const existing = windows.find(w => w.key === key);
     if (existing) {
-      setWindows(windows.map(w => w.key === key ? {...w, minimized: false, z: zTop+1} : w));
+      setWindows(ws => ws.map(w => w.key === key ? {...w, minimized: false, z: Math.max(...ws.map(x=>x.z), 100) + 1} : w));
       setFocusedId(existing.id);
-      setZTop(zTop+1);
+      setZTop(z => z + 1);
       return;
     }
     const def = APP_REGISTRY[key];
     const id = Date.now() + Math.random();
     const x = 140 + (windows.length * 24) % 200;
     const y = 40 + (windows.length * 24) % 150;
-    setWindows([...windows, {
+    setWindows(ws => [...ws, {
       id, key, title: def.title, comp: def.comp,
-      x, y, w: def.w, h: def.h, z: zTop+1, minimized: false,
+      x, y, w: def.w, h: def.h, z: Math.max(...ws.map(x=>x.z), 100) + 1, minimized: false,
       icon: window.Icons[key]
     }]);
     setFocusedId(id);
-    setZTop(zTop+1);
+    setZTop(z => z + 1);
   };
 
   const closeWindow = (id) => {
-    setWindows(windows.filter(w => w.id !== id));
-    if (focusedId === id) setFocusedId(null);
+    setWindows(ws => ws.filter(w => w.id !== id));
+    setFocusedId(fid => fid === id ? null : fid);
   };
   const focusWindow = (id) => {
     if (focusedId === id) return;
-    setWindows(windows.map(w => w.id === id ? {...w, z: zTop+1} : w));
+    setWindows(ws => {
+      const nextZ = Math.max(...ws.map(x=>x.z), 100) + 1;
+      return ws.map(w => w.id === id ? {...w, z: nextZ} : w);
+    });
     setFocusedId(id);
-    setZTop(zTop+1);
+    setZTop(z => z + 1);
   };
   const minimizeWindow = (id) => {
-    setWindows(windows.map(w => w.id === id ? {...w, minimized: true} : w));
+    setWindows(ws => ws.map(w => w.id === id ? {...w, minimized: true} : w));
   };
   const focusToggle = (id) => {
-    const w = windows.find(x=>x.id===id);
+    const w = windows.find(x => x.id === id);
     if (!w) return;
     if (w.minimized) {
-      setWindows(windows.map(x=>x.id===id?{...x, minimized:false, z:zTop+1}:x));
-      setFocusedId(id); setZTop(zTop+1);
+      // Restaurar y enfocar
+      setWindows(ws => {
+        const nextZ = Math.max(...ws.map(x=>x.z), 100) + 1;
+        return ws.map(x => x.id === id ? {...x, minimized: false, z: nextZ} : x);
+      });
+      setFocusedId(id);
+      setZTop(z => z + 1);
     } else if (focusedId === id) {
+      // Enfocada → minimizar
       minimizeWindow(id);
       setFocusedId(null);
     } else {
@@ -179,11 +199,17 @@ function App() {
   // Export/Import — ahora vía AeroCloud (Firestore es la fuente de verdad)
   const onExport = () => {
     const data = window.AeroCloud ? window.AeroCloud.getAll() : {};
+    // Aviso explícito: el JSON exportado va sin cifrar a ~/Downloads e incluye
+    // diario, médico y finanzas. Si Downloads sincroniza a iCloud/Dropbox/etc,
+    // esos servicios verán los datos. El usuario confirma antes de proceder.
+    if (!confirm('Se generará un archivo con TODOS tus datos (diario, médico, finanzas) sin cifrar. Guárdalo en un sitio seguro. ¿Continuar?')) return;
     const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `aero-backup-${window.todayKey()}.json`; a.click();
-    URL.revokeObjectURL(url);
+    // Yield al event loop antes de revocar: en Safari iOS la descarga necesita
+    // un tick para iniciarse; revocar síncronamente bajaba archivo de 0 bytes.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
   const onImport = (text) => {
     const ALLOWED_KEYS = new Set(['habits','cal_events','cal_festivos','quicklinks','tweaks','animes','pelis','proyectos','recursos','fp_tasks','fp_modulos','diario','finanzas','medico','clock_city','horario','series','juegos']);
@@ -262,13 +288,12 @@ function App() {
       {/* Tweaks panel */}
       <window.TweaksPanel visible={tweaksVisible} tweaks={tweaks} onTweak={applyTweak} />
 
-      {/* Taskbar */}
+      {/* Taskbar — el reloj vive dentro para aislar su tick de 30s del árbol */}
       <window.Taskbar
         windows={windows}
         focused={focusedId}
         onFocusToggle={focusToggle}
         onStart={()=>{}}
-        clock={clock}
       />
     </>
   );
