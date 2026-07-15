@@ -2,6 +2,22 @@
 
 const { useState: uS, useEffect: uE, useRef: uR, useMemo: uM } = React;
 
+const translateColor = (id) => {
+  const translations = {
+    red: 'Rojo',
+    orange: 'Naranja',
+    gold: 'Dorado',
+    green: 'Verde',
+    lightgreen: 'Verde claro',
+    teal: 'Turquesa',
+    blue: 'Azul',
+    purple: 'Morado',
+    pink: 'Rosa',
+    lightpink: 'Rosa claro'
+  };
+  return translations[id] || id;
+};
+
 // ============ TAREAS FP ============
 // Módulos: {id, name, color}. Color aplica a badge + evento calendario.
 // Tareas: pueden ser tipo 'tarea' (default) o 'examen' (con campo tema + color rojo).
@@ -214,7 +230,7 @@ function TareasFPApp() {
             <div className="add-row" style={{marginBottom:10}}>
               <input placeholder="Nombre de la categoría…" value={modDraft.name} onChange={e=>setModDraft({...modDraft, name: e.target.value})} onKeyDown={e=>e.key==='Enter'&&addModulo()}/>
               <select value={modDraft.color} onChange={e=>setModDraft({...modDraft, color: e.target.value})} style={{maxWidth:110}}>
-                {MODULO_COLORS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
+                {MODULO_COLORS.map(c => <option key={c.id} value={c.id}>{translateColor(c.id)}</option>)}
               </select>
               <button className="btn green sm" onClick={addModulo}>+</button>
             </div>
@@ -227,7 +243,7 @@ function TareasFPApp() {
                 <div style={{width:14, height:14, borderRadius:3, background: MODULO_COLORS.find(c=>c.id===m.color)?.hex, border:'1px solid rgba(0,0,0,0.35)'}}/>
                 <div style={{flex:1, fontWeight:600}}>{m.name}</div>
                 <select value={m.color} onChange={e=>editModuloColor(m.id, e.target.value)} style={{maxWidth:90}}>
-                  {MODULO_COLORS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
+                  {MODULO_COLORS.map(c => <option key={c.id} value={c.id}>{translateColor(c.id)}</option>)}
                 </select>
                 <button className="btn red sm" onClick={()=>delModulo(m.id)}>✕</button>
               </div>
@@ -1202,7 +1218,7 @@ function CalendarioApp() {
               <div style={{display:'flex', gap:4, alignItems:'center'}}>
                 {['blue','green','red','purple'].map(c => (
                   <div key={c} onClick={()=>setDraft({...draft, color:c})}
-                    title={c}
+                    title={translateColor(c)}
                     style={{width:16, height:16, borderRadius:4, cursor:'pointer',
                       background: window.calEventColor(c),
                       outline: draft.color===c ? '2px solid #0d2a56' : '1px solid rgba(0,0,0,0.3)'}}/>

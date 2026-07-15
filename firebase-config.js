@@ -15,6 +15,7 @@
 //     incluso si el IIFE crashea). Sirve para confirmar que el navegador cargó esta
 //     versión y no una cacheada. ---
 const AERO_VERSION = 'v2026-04-23c';
+window.AERO_VERSION = AERO_VERSION;
 function aeroMountVersionStamp() {
   if (!document.body) { setTimeout(aeroMountVersionStamp, 30); return; }
   if (document.getElementById('aero-version-stamp')) return;
@@ -24,7 +25,8 @@ function aeroMountVersionStamp() {
   tag.style.cssText = 'position:fixed;bottom:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font:10px ui-monospace,monospace;padding:2px 6px;border-radius:3px;z-index:1000001;pointer-events:none;user-select:none';
   document.body.appendChild(tag);
 }
-aeroMountVersionStamp();
+// Commented out to prevent the black square from overlaying on the Start button
+// aeroMountVersionStamp();
 
 // --- Banner de error fatal (si el IIFE crashea, mostramos el error en pantalla) ---
 function aeroShowFatal(msg) {

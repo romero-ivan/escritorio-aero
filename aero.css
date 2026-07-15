@@ -482,7 +482,9 @@ input:focus, textarea:focus, select:focus {
   gap: 6px;
 }
 .start-orb {
-  width: 90px;
+  min-width: 92px;
+  width: auto;
+  padding: 0 10px;
   height: 28px;
   border-radius: 18px;
   background: radial-gradient(ellipse at 30% 30%,
@@ -494,7 +496,7 @@ input:focus, textarea:focus, select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   color: #fff;
   font-family: var(--font-ui);
   font-weight: 700;
@@ -1064,6 +1066,9 @@ hr.aero-sep {
     overflow-y: auto;
     -webkit-text-size-adjust: 100%;
     font-size: 13px;
+  }
+  input[type="text"], input[type="number"], input[type="date"], textarea, select {
+    font-size: 16px !important;
   }
   #root {
     position: static;

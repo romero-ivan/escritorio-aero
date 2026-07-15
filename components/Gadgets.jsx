@@ -281,10 +281,10 @@ function CityPickerModal({ currentCity, onClose, onPick }) {
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
     onPick({ id: 'custom:' + customName.toLowerCase().replace(/\s+/g,'-'), name: customName.trim(), lat, lon });
   };
-  return (
+  return ReactDOM.createPortal(
     <div
       onClick={onClose}
-      style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}
+      style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}
     >
       <div
         onClick={e => e.stopPropagation()}
@@ -330,7 +330,8 @@ function CityPickerModal({ currentCity, onClose, onPick }) {
           <button className="btn sm" onClick={onClose}>Cancelar</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 window.CityPickerModal = CityPickerModal;
