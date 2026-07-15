@@ -68,6 +68,7 @@ try {
   const PENDING_KEY = '__aero_pending_v2';
 
   let currentUser = null;
+  let localMode = localStorage.getItem('__aero_local_mode') === '1';
   let cloudUnsub = null;
   let driveToken = null;
   let initialSyncDone = false;
@@ -235,6 +236,14 @@ try {
   // ============================================================
 
   async function pushField(key, value) {
+    if (localMode) {
+      pending.delete(key);
+      pendingWrites = Math.max(0, pendingWrites - 1);
+      delete persistedPending[key];
+      savePersistedPending();
+      updateChipHealth();
+      return;
+    }
     if (!currentUser) {
       log('push ' + key + ': sin user, encolado');
       // Ya está en persistedPending vía set(). Solo registramos en cola en memoria.
@@ -273,6 +282,14 @@ try {
   }
 
   async function deleteField(key) {
+    if (localMode) {
+      pending.delete(key);
+      pendingWrites = Math.max(0, pendingWrites - 1);
+      delete persistedPending[key];
+      savePersistedPending();
+      updateChipHealth();
+      return;
+    }
     if (!currentUser) {
       log('remove ' + key + ': sin user, encolado');
       offlineQueue.push({ op: 'remove', key });
@@ -443,8 +460,15 @@ try {
     permDeniedCount = 0;
     if (!user) {
       log('auth: signed out');
-      showOverlay();
-      setChip('☁', '');
+      if (localMode) {
+        log('auth: modo local activo, omitiendo login');
+        hideOverlay();
+        setChip('💻', '#5fa028');
+        initialSyncDone = true;
+      } else {
+        showOverlay();
+        setChip('☁', '');
+      }
       // Hardening v2026-04-23a: siempre limpiar el token OAuth de Drive y la
       // cola offline al desloguearse. La caché de lectura (CACHE_KEY) se mantiene
       // por defecto para tolerar logins intermitentes; para purgarla del todo
@@ -454,6 +478,8 @@ try {
       return;
     }
     log('auth: signed in as ' + (user.email || user.uid));
+    localMode = false;
+    try { localStorage.removeItem('__aero_local_mode'); } catch {}
     setChip('↓', '#ffaa00');
     subscribeToCloud();
   });
@@ -468,17 +494,22 @@ try {
     <div class="cloud-login-card">
       <div class="cloud-login-header">
         <div class="cloud-login-title">Escritorio Aero</div>
-        <div class="cloud-login-sub">Inicia sesión con Google para sincronizar</div>
+        <div class="cloud-login-sub">Elige cómo deseas acceder a tu escritorio</div>
       </div>
-      <button id="cloud-login-btn" class="cloud-login-btn">
-        <svg width="18" height="18" viewBox="0 0 48 48">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-        </svg>
-        Iniciar sesión con Google
-      </button>
+      <div style="display:flex; flex-direction:column; gap:10px; align-items:center; width:100%">
+        <button id="cloud-login-btn" class="cloud-login-btn" style="justify-content:center; width:100%; box-sizing:border-box">
+          <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Iniciar sesión con Google
+        </button>
+        <button id="cloud-local-btn" class="cloud-login-btn" style="background:var(--btn-jelly-green); color:#1d3d0a; border-color:rgba(60,110,30,0.6); justify-content:center; width:100%; box-sizing:border-box">
+          📂 Usar Modo Local (Sin cuenta)
+        </button>
+      </div>
       <div id="cloud-login-status" class="cloud-login-status"></div>
     </div>
   `;
@@ -592,6 +623,14 @@ try {
 
   // Bind listeners UNA vez (los elementos ya existen en memoria desde createElement)
   overlay.querySelector('#cloud-login-btn').addEventListener('click', signIn);
+  overlay.querySelector('#cloud-local-btn').addEventListener('click', () => {
+    localMode = true;
+    try { localStorage.setItem('__aero_local_mode', '1'); } catch {}
+    hideOverlay();
+    setChip('💻', '#5fa028');
+    initialSyncDone = true;
+    log('Modo local activado');
+  });
   errBanner.querySelector('#cloud-err-close').addEventListener('click', hideErr);
   diagBtn.addEventListener('click', showDiag);
   diagModal.querySelector('#diag-close').addEventListener('click', hideDiag);
@@ -615,16 +654,32 @@ try {
     log('📋 total: ' + Object.keys(store).length + ' claves');
   });
   diagModal.querySelector('#diag-signout').addEventListener('click', () => {
-    if (confirm('¿Cerrar sesión? La caché local se mantiene (usa "Borrar y salir" si quieres purgarla).')) auth.signOut();
+    if (confirm('¿Cerrar sesión / Salir del modo local? La caché local se mantiene.')) {
+      localMode = false;
+      try { localStorage.removeItem('__aero_local_mode'); } catch {}
+      setChip('☁', '');
+      showOverlay();
+      initialSyncDone = false;
+      auth.signOut();
+      hideDiag();
+    }
   });
   diagModal.querySelector('#diag-hardsignout').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión y BORRAR todos los datos locales (caché, cola pendiente, token de Drive)? Los datos en Firestore NO se tocan — podrás recuperarlos al volver a iniciar sesión.')) {
       hardSignOut();
+      hideDiag();
     }
   });
   chip.addEventListener('click', () => {
-    if (!currentUser) return;
-    if (confirm('¿Cerrar sesión? La caché local se mantiene (usa 🔧 diag → "Borrar y salir" si quieres purgarla).')) auth.signOut();
+    if (!currentUser && !localMode) return;
+    if (confirm('¿Cerrar sesión / Salir del modo local? La caché local se mantiene.')) {
+      localMode = false;
+      try { localStorage.removeItem('__aero_local_mode'); } catch {}
+      setChip('☁', '');
+      showOverlay();
+      initialSyncDone = false;
+      auth.signOut();
+    }
   });
 
   // Mount UI: si body ya existe, append YA. Si no, esperar a DOMContentLoaded.
@@ -664,9 +719,11 @@ try {
     try {
       localStorage.removeItem(CACHE_KEY);
       localStorage.removeItem(PENDING_KEY);
+      localStorage.removeItem('__aero_local_mode');
       localStorage.removeItem('__aero_migrated_v2');
       localStorage.removeItem('__last_drive_backup');
     } catch {}
+    localMode = false;
     persistedPending = {};
     pending.clear();
     pendingWrites = 0;

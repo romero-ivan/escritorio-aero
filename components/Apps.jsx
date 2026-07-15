@@ -23,11 +23,11 @@ const EXAM_COLOR_HEX = '#a01010';
 // un día oficialmente festivo del resto. Se usa en el widget y en el calendario.
 const FESTIVO_COLOR_HEX = '#2a8f10';
 const DEFAULT_MODULOS = [
-  { name: 'Interiores',      color: 'red' },
-  { name: 'Auto',            color: 'blue' },
-  { name: 'E-tecnica',       color: 'orange' },
-  { name: 'Electrónica',     color: 'lightgreen' },
-  { name: 'Digitalización',  color: 'lightpink' },
+  { name: 'Trabajo',      color: 'blue' },
+  { name: 'Personal',     color: 'green' },
+  { name: 'Estudios',     color: 'purple' },
+  { name: 'Finanzas',     color: 'gold' },
+  { name: 'Salud',        color: 'red' },
 ];
 // Shared color resolver used by CalendarioApp to render events. 'red' es para exámenes.
 // Nota: 'festivo' ya NO es un color de evento — los festivos viven en la key
@@ -87,7 +87,7 @@ function TareasFPApp() {
     const title = draft.title.trim();
     if (!title) {
       setAddError(draft.tipo === 'examen'
-        ? 'Escribe el nombre del examen en el primer campo.'
+        ? 'Escribe el nombre del hito / evento en el primer campo.'
         : 'Escribe el nombre de la tarea.');
       return;
     }
@@ -115,7 +115,7 @@ function TareasFPApp() {
     setModDraft({ name: '', color: 'blue' });
   };
   const delModulo = (id) => {
-    if (!confirm('¿Borrar módulo? Las tareas con este módulo lo perderán.')) return;
+    if (!confirm('¿Borrar categoría? Las tareas con esta categoría la perderán.')) return;
     setModulos(prev => prev.filter(m => m.id !== id));
     setTasks(prev => prev.map(t => t.moduloId === id ? {...t, moduloId: ''} : t));
   };
@@ -125,7 +125,7 @@ function TareasFPApp() {
     const toAdd = DEFAULT_MODULOS
       .filter(d => !existingNames.has(d.name.toLowerCase()))
       .map((d, i) => ({ id: 'm' + Date.now() + i, name: d.name, color: d.color }));
-    if (toAdd.length === 0) { alert('Todos los módulos por defecto ya existen.'); return; }
+    if (toAdd.length === 0) { alert('Todas las categorías por defecto ya existen.'); return; }
     setModulos(prev => [...prev, ...toAdd]);
   };
 
@@ -144,21 +144,21 @@ function TareasFPApp() {
 
   return (
     <div>
-      <h2 className="section-title">📚 Tareas de FP
-        <button className="btn sm" style={{float:'right', fontSize:10}} onClick={()=>setShowModModal(true)}>📂 Módulos ({modulos.length})</button>
+      <h2 className="section-title">📚 Tareas
+        <button className="btn sm" style={{float:'right', fontSize:10}} onClick={()=>setShowModModal(true)}>📂 Categorías ({modulos.length})</button>
       </h2>
       <div className="add-row" style={{flexWrap:'wrap'}}>
-        <input placeholder={draft.tipo==='examen'?'Nombre del examen…':'Tarea…'} value={draft.title} onChange={e=>setDraft({...draft, title: e.target.value})} onKeyDown={e=>e.key==='Enter'&&add()}/>
+        <input placeholder={draft.tipo==='examen'?'Nombre del evento…':'Tarea…'} value={draft.title} onChange={e=>setDraft({...draft, title: e.target.value})} onKeyDown={e=>e.key==='Enter'&&add()}/>
         <select value={draft.moduloId} onChange={e=>setDraft({...draft, moduloId: e.target.value})} style={{maxWidth:130}}>
-          <option value="">— Módulo —</option>
+          <option value="">— Categoría —</option>
           {modulos.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
         <select value={draft.tipo} onChange={e=>setDraft({...draft, tipo: e.target.value})} style={{maxWidth:90}}>
           <option value="tarea">📋 Tarea</option>
-          <option value="examen">📝 Examen</option>
+          <option value="examen">📝 Hito / Evento</option>
         </select>
         {draft.tipo === 'examen' && (
-          <input placeholder="Tema del examen…" value={draft.tema} onChange={e=>setDraft({...draft, tema: e.target.value})} style={{maxWidth:140}}/>
+          <input placeholder="Detalles / Tema…" value={draft.tema} onChange={e=>setDraft({...draft, tema: e.target.value})} style={{maxWidth:140}}/>
         )}
         <input type="date" value={draft.due} onChange={e=>setDraft({...draft, due: e.target.value})} style={{maxWidth:130}}/>
         <select value={draft.prio} onChange={e=>setDraft({...draft, prio: e.target.value})} style={{maxWidth:80}}>
@@ -191,7 +191,7 @@ function TareasFPApp() {
                 <div style={{fontWeight:600}}>{isExam && '📝 '}{t.title}{t.tema && <span style={{fontWeight:400, opacity:0.8}}> — {t.tema}</span>}</div>
                 <div style={{fontSize:10, opacity:0.75, marginTop:2, display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
                   {mod && <span className="tag" style={{background: moduloColorHex(mod.id), color:'#fff'}}>{mod.name}</span>}
-                  {isExam && <span className="tag" style={{background: EXAM_COLOR_HEX, color:'#fff'}}>Examen</span>}
+                  {isExam && <span className="tag" style={{background: EXAM_COLOR_HEX, color:'#fff'}}>Hito / Evento</span>}
                   <span className={`tag ${prioColor}`}>{t.prio}</span>
                   {t.due && <span style={{color: dl < 0 ? '#b01010' : dl < 3 ? '#b08000' : 'inherit'}}>
                     📅 {t.due} {dl !== null && (dl < 0 ? `(${Math.abs(dl)}d tarde)` : dl===0 ? '(¡hoy!)' : `(en ${dl}d)`)}
@@ -208,20 +208,20 @@ function TareasFPApp() {
         <div style={{position:'absolute', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10}} onClick={()=>setShowModModal(false)}>
           <div className="aero-card" style={{width:380, maxHeight:'80%', overflowY:'auto', padding:16}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
-              <h3 style={{margin:0, fontSize:15}}>📂 Módulos FP</h3>
+              <h3 style={{margin:0, fontSize:15}}>📂 Categorías</h3>
               <button className="btn sm" onClick={()=>setShowModModal(false)}>✕</button>
             </div>
             <div className="add-row" style={{marginBottom:10}}>
-              <input placeholder="Nombre del módulo…" value={modDraft.name} onChange={e=>setModDraft({...modDraft, name: e.target.value})} onKeyDown={e=>e.key==='Enter'&&addModulo()}/>
+              <input placeholder="Nombre de la categoría…" value={modDraft.name} onChange={e=>setModDraft({...modDraft, name: e.target.value})} onKeyDown={e=>e.key==='Enter'&&addModulo()}/>
               <select value={modDraft.color} onChange={e=>setModDraft({...modDraft, color: e.target.value})} style={{maxWidth:110}}>
                 {MODULO_COLORS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
               </select>
               <button className="btn green sm" onClick={addModulo}>+</button>
             </div>
             <div style={{marginBottom:10}}>
-              <button className="btn sm" onClick={loadDefaults} style={{width:'100%'}}>⚡ Cargar módulos por defecto (FP)</button>
+              <button className="btn sm" onClick={loadDefaults} style={{width:'100%'}}>⚡ Cargar categorías por defecto</button>
             </div>
-            {modulos.length === 0 && <div className="empty-hint">Aún no hay módulos. Añade el primero arriba.</div>}
+            {modulos.length === 0 && <div className="empty-hint">Aún no hay categorías. Añade la primera arriba.</div>}
             {modulos.map(m => (
               <div key={m.id} className="aero-card" style={{padding:'6px 10px', display:'flex', alignItems:'center', gap:8, marginBottom:4}}>
                 <div style={{width:14, height:14, borderRadius:3, background: MODULO_COLORS.find(c=>c.id===m.color)?.hex, border:'1px solid rgba(0,0,0,0.35)'}}/>
@@ -1102,7 +1102,7 @@ function CalendarioApp() {
       if (!t.due || t.done) return;
       const mod = fpModulos.find(m => m.id === t.moduloId);
       const color = t.tipo === 'examen' ? 'red' : (mod?.color || 'blue');
-      const label = (t.tipo === 'examen' ? '\ud83d\udcdd Examen: ' : '') + t.title + (t.tema ? ` (${t.tema})` : '');
+      const label = (t.tipo === 'examen' ? '\ud83d\udcdd Hito: ' : '') + t.title + (t.tema ? ` (${t.tema})` : '');
       if (!out[t.due]) out[t.due] = [];
       out[t.due] = [...out[t.due], { id: 'fp:' + t.id, text: label, color, readOnly: true }];
     });

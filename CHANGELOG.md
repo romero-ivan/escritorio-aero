@@ -1,5 +1,15 @@
 # Changelog — Escritorio Aero
 
+## [2026-07-15] - Modo local opcional, acceso generalizado de Firestore y generalización de tareas
+
+### Archivos tocados
+- `firebase-config.js`: Agregada la opción "Modo Local" (offline) en la pantalla de login con persistencia en localStorage, chip verde indicativo y bypass de Firestore.
+- `firestore.rules`: Eliminada la restricción por email específico para permitir el uso seguro a cualquier usuario con cuenta de Google verificada.
+- `components/App.jsx`: Renombrada la aplicación de tareas en el registro de "Tareas de FP" a "Tareas".
+- `components/Apps.jsx`: Modificados los textos y lógica de la aplicación de tareas para usar términos generalistas ("Categorías" en vez de "Módulos", "Hitos" en vez de "Exámenes"), adaptadas las categorías por defecto y la integración con el calendario.
+- `Escritorio.html`: Actualizado para apuntar al nuevo bundle compilado de producción.
+- `dist/app.6e8153c938.js` (nuevo): Bundle de producción actualizado.
+
 ## [2026-07-15] - Creación de documentación del proyecto
 
 ### Archivos tocados

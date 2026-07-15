@@ -33,7 +33,7 @@ const DEFAULT_LINKS = [
 
 // App registry
 const APP_REGISTRY = {
-  fp:         { title: 'Tareas de FP',     comp: 'TareasFPApp',   w: 560, h: 440 },
+  fp:         { title: 'Tareas',           comp: 'TareasFPApp',   w: 560, h: 440 },
   horario:    { title: 'Horario',          comp: 'HorarioApp',    w: 720, h: 480 },
   diario:     { title: 'Diario personal',  comp: 'DiarioApp',     w: 640, h: 460 },
   habitos:    { title: 'Hábitos',          comp: 'HabitosApp',    w: 720, h: 440, needsHabits: true },
