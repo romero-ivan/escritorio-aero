@@ -1,8 +1,9 @@
 # Changelog — Escritorio Aero
 
-## [2026-07-15] - Modo local opcional, acceso generalizado de Firestore y generalización de tareas
+## [2026-07-15] - Modo local opcional, acceso generalizado de Firestore, generalización de tareas y redimensión de iconos
 
 ### Archivos tocados
+- `aero.css`: Aumentado el tamaño de los iconos del escritorio para pantallas de ordenador (glifos de 72px, tarjeta de 120px de ancho y fuente de 12px), adaptando el padding y el grid sin alterar el diseño de visualización móvil.
 - `firebase-config.js`: Agregada la opción "Modo Local" (offline) en la pantalla de login con persistencia en localStorage, chip verde indicativo y bypass de Firestore.
 - `firestore.rules`: Eliminada la restricción por email específico para permitir el uso seguro a cualquier usuario con cuenta de Google verificada.
 - `components/App.jsx`: Renombrada la aplicación de tareas en el registro de "Tareas de FP" a "Tareas".
