@@ -1,4 +1,4 @@
-# Escritorio Aero — Mi Escritorio Personal
+# Escritorio Aero - Mi Escritorio Personal
 
 Un entorno de escritorio web personal, interactivo y altamente personalizable que recupera la estética Frutiger Aero (popular en los años 2000: brillos, burbujas de agua, transparencias de tipo glassmorphism y colores vivos). Está optimizado para rendimiento e integrado con Firebase para almacenamiento persistente y sincronización en tiempo real.
 
