@@ -1,5 +1,10 @@
 # Changelog — Escritorio Aero
 
+## [2026-07-15] - Creación de documentación del proyecto
+
+### Archivos tocados
+- `README.md` (nuevo): Documentación inicial con detalles de características, arquitectura, guía de inicio rápido y reglas del proyecto.
+
 ## [2026-04-23c] - Performance: Lighthouse 50 → (objetivo 90+). Pre-build JSX, React prod, etc.
 
 ### Por qué Lighthouse daba 50% en Performance
