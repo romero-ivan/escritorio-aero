@@ -112,7 +112,7 @@ Resultado combinado: LCP 2.1 s, TBT 990 ms, `Element render delay` del LCP = 2,1
 ### Security (raíz: auditoría exhaustiva con 4 agents paralelos)
 
 - **C1 — Fix CRÍTICO: `.git/` estaba servido públicamente en producción** — `firebase.json`
-  - El glob `"**/.*"` del `ignore` NO matcheaba carpetas ocultas al nivel raíz de `"public": "."`. Resultado: `curl https://escritorio-aero.web.app/.git/config` devolvía el config completo (incluyendo `user@example.com` y la URL del repo). Con `git-dumper` se reconstruía el repo entero en 30s.
+  - El glob `**/.*` del `ignore` NO matcheaba carpetas ocultas al nivel raíz de `"public": "."`. Resultado: `curl https://escritorio-aero.web.app/.git/config` devolvía el config completo (incluyendo `user@example.com` y la URL del repo). Con `git-dumper` se reconstruía el repo entero en 30s.
   - Arreglado: `ignore` pasa a array explícito con `.git`, `.git/**`, `.firebase`, `.firebase/**`, `.claude`, `.claude/**`, `.vscode/**`, `.idea/**`, `node_modules`, `node_modules/**`, más los patrones existentes. Verificar tras deploy: `curl -I /.git/HEAD` debe devolver `text/html` (SPA fallback), no `text/plain`.
 
 - **H2 — Validación de analíticas médicas: tamaño + MIME whitelist + magic bytes** — `components/Apps.jsx`
